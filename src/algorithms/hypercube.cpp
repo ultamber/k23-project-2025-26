@@ -23,6 +23,9 @@ void Hypercube::buildIndex()
     // slide 18: w ∈ [2, 6], larger for range queries
     w_ = (Args.w > 0) ? Args.w : 4.0f;
 
+    //Setup ground truth
+    setUpGroundTruth();
+
     // Random number generators
     std::mt19937_64 rng(Args.seed);
     std::normal_distribution<double> normal(0.0, 1.0);    // For LSH projections
@@ -278,31 +281,23 @@ void Hypercube::search(const std::vector<VectorData> &queries, std::ofstream &ou
         double tApprox = duration<double>(high_resolution_clock::now() - t0).count();
         totalApprox += tApprox;
 
-        // Ground truth for evaluation
-        auto t2 = high_resolution_clock::now();
-        std::vector<std::pair<double, int>> distTrue;
-        distTrue.reserve(
-            Data.size());
-        for (auto &v : Data)
-            distTrue.emplace_back(l2(q, v.values), v.id);
-        if (topN > 0)
-        {
-            std::nth_element(distTrue.begin(), distTrue.begin() + topN, distTrue.end());
-            std::sort(distTrue.begin(), distTrue.begin() + topN);
-            distTrue.resize(topN);
+        // Compute true nearest neighbors for evaluation
+        NeighborInfo trueNeighborhood;
+        for (auto item : GroundTruth){
+            if (item.VectorId == queries[qi].id){
+                trueNeighborhood = item;
+            }
         }
-        double tTrue = duration<double>(high_resolution_clock::now() - t2).count();
-        totalTrue += tTrue;
 
         // Metrics
         double AFq = 0, recallq = 0;
         for (int i = 0; i < topN; ++i)
         {
-            double da = distApprox[i].first, dt = distTrue[i].first;
+            double da = distApprox[i].first, dt = trueNeighborhood.Neighbors[i].first;
             AFq += (dt > 0 ? da / dt : 1.0);
             int aid = distApprox[i].second;
             for (int j = 0; j < topN; ++j)
-                if (aid == distTrue[j].second)
+                if (aid == trueNeighborhood.Neighbors[j].second)
                 {
                     recallq += 1;
                     break;
@@ -323,7 +318,7 @@ void Hypercube::search(const std::vector<VectorData> &queries, std::ofstream &ou
         {
             out << "Nearest neighbor-" << (i + 1) << ": " << distApprox[i].second << "\n";
             out << "distanceApproximate: " << distApprox[i].first << "\n";
-            out << "distanceTrue: " << distTrue[i].first << "\n";
+            out << "distanceTrue: " << trueNeighborhood.Neighbors[i].first << "\n";
         }
         out << "\nR-near neighbors:\n";
         for (int id : rlist)

@@ -113,6 +113,9 @@ void IVFPQ::buildIndex()
     M_ = Args.Msubvectors;       // Number of subquantizers (M in slides)
     Ks_ = 1 << Args.nbits;       // Codebook size per subquantizer (s = 2^nbits in slides)
 
+    //Setup ground truth
+    setUpGroundTruth();
+
     const int N = (int)Data.size();
     if (N == 0)
     {

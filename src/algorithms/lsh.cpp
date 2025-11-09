@@ -1,4 +1,5 @@
 #include "../../include/algorithms/lsh.hpp"
+#include <ostream>
 #include <random>
 #include <algorithm>
 #include <chrono>
@@ -140,6 +141,7 @@ std::uint64_t LSH::keyFor(const std::vector<float> &v, int li) const
  */
 void LSH::search(const std::vector<VectorData> &queries, std::ofstream &out)
 {
+
     using namespace std::chrono;
     out << "LSH\n\n";
 
@@ -236,28 +238,25 @@ void LSH::search(const std::vector<VectorData> &queries, std::ofstream &out)
         totalApprox += tApprox;
 
         // Compute true nearest neighbors for evaluation
-        auto t2 = high_resolution_clock::now();
-        std::vector<std::pair<double, int>> distTrue;
-        distTrue.reserve(Data.size());
-        for (auto &v : Data)
-            distTrue.emplace_back(l2(q, v.values), v.id);
-        std::nth_element(distTrue.begin(), distTrue.begin() + N, distTrue.end());
-        std::sort(distTrue.begin(), distTrue.begin() + N);
-        double tTrue = duration<double>(high_resolution_clock::now() - t2).count();
-        totalTrue += tTrue;
+        NeighborInfo trueNeighborhood;
+        for (auto item : GroundTruth){
+            if (item.VectorId == queries[qi].id){
+                trueNeighborhood = item;
+            }
+        }
 
         // Calculate quality metrics
         double AFq = 0, recallq = 0;
         for (int i = 0; i < N; ++i)
         {
-            double da = distApprox[i].first, dt = distTrue[i].first;
+            double da = distApprox[i].first, dt = trueNeighborhood.Neighbors[i].first;
             AFq += (dt > 0 ? da / dt : 1.0);
 
             // Check if approximate neighbor is in true top-N
             int aid = distApprox[i].second;
             for (int j = 0; j < N; ++j)
             {
-                if (aid == distTrue[j].second)
+                if (aid == trueNeighborhood.Neighbors[j].second)
                 {
                     recallq += 1;
                     break;
@@ -280,7 +279,7 @@ void LSH::search(const std::vector<VectorData> &queries, std::ofstream &out)
         {
             out << "Nearest neighbor-" << (i + 1) << ": " << distApprox[i].second << "\n";
             out << "distanceApproximate: " << distApprox[i].first << "\n";
-            out << "distanceTrue: " << distTrue[i].first << "\n";
+            out << "distanceTrue: " << trueNeighborhood.Neighbors[i].first << "\n";
         }
         out << "\nR-near neighbors:\n";
         for (int id : rlist)

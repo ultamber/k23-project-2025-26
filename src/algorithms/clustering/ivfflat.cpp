@@ -21,6 +21,9 @@ void IVFFlat::kmeans(const std::vector<std::vector<float>> &P, int k, int iters,
     std::mt19937_64 rng(seed);
     std::uniform_int_distribution<int> uni(0, N - 1);
 
+    //Setup ground truth
+    setUpGroundTruth();
+
     // Initialize: k distinct random centers ref 31
     Centroids.assign(k, std::vector<float>(D, 0.0f));
     std::vector<int> init;
