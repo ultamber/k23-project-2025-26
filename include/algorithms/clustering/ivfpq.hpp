@@ -6,9 +6,9 @@
 class IVFPQ : public IVFFlat
 {
 public:
-    explicit IVFPQ(const Arguments &a) : IVFFlat(a) {}
-    void buildIndex(const Dataset &data) override;
-    void search(const Dataset &queries, std::ofstream &out) override;
+    explicit IVFPQ(const Arguments &a, const int &b, const std::vector<VectorData> &c) : IVFFlat(a, b, c) {}
+    void buildIndex() override;
+    void search(const std::vector<VectorData> &queries, std::ofstream &out) override;
 
 private:
     int M_ = 0;               // subquantizers
@@ -19,8 +19,7 @@ private:
     std::vector<std::vector<uint8_t>> codes_;                // [N][M]
 
     // Helper functions
-    void makeResiduals(const Dataset &data, const std::vector<int> &assign,
-                       std::vector<std::vector<float>> &residuals);
+    void makeResiduals(const std::vector<int> &assign, std::vector<std::vector<float>> &residuals);
     void trainPQ(const std::vector<std::vector<float>> &residuals);
     void encodeAll(const std::vector<std::vector<float>> &residuals);
 };

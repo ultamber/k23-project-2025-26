@@ -5,9 +5,9 @@
 class IVFFlat : public SearchMethod
 {
 public:
-    explicit IVFFlat(const Arguments &a) : SearchMethod(a) {}
-    void buildIndex(const Dataset &data) override;
-    void search(const Dataset &queries, std::ofstream &out) override;
+    explicit IVFFlat(const Arguments &a, const int &b, const std::vector<VectorData> &c) : SearchMethod(a, b, c) {}
+    void buildIndex() override;
+    void search(const std::vector<VectorData> &queries, std::ofstream &out) override;
 
     double silhouetteScore();
     std::vector<double> silhouettePerCluster();

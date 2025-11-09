@@ -6,20 +6,17 @@
 #include <chrono>
 #include <iomanip>
 #include <iostream>
+#include <vector>
 
 /**
  * Builds the Hypercube index for the input dataset ref 24
  * @param data Input dataset to be indexed
  */
-void Hypercube::buildIndex(const Dataset &data)
+void Hypercube::buildIndex()
 {
-
-    Data = data;
-    Dim = data.dimension;
-
     // slide 24: d' = floor(log_2 n) - {1,2,3}
     const size_t n = 
-        Data.vectors.size();
+        Data.size();
     int dlog = (n > 0) ? (int)std::floor(std::log2((double)std::max<size_t>(1, n))) : 1;
     kproj_ = (Args.kproj > 0) ? Args.kproj : std::max(1, dlog - 2);
 
@@ -74,7 +71,7 @@ void Hypercube::buildIndex(const Dataset &data)
     // slide 24: Insert all data points into their vertices
     for (int id = 0; id < (int)n; ++id)
     {
-        const auto &v = Data.vectors[id].values;
+        const auto &v = Data[id].values;
         std::uint64_t vtx = vertexOf(v);
         if (denseCube_)
             cubeDense_[vtx].push_back(id);
@@ -194,7 +191,7 @@ Hypercube::probesList(std::uint64_t base, int kproj, int maxProbes, int maxHammi
  * @param queries Query dataset
  * @param out Output file stream for results
  */
-void Hypercube::search(const Dataset &queries, std::ofstream &out)
+void Hypercube::search(const std::vector<VectorData> &queries, std::ofstream &out)
 {
     using namespace std::chrono;
     out << "Hypercube\n\n";
@@ -208,14 +205,14 @@ void Hypercube::search(const Dataset &queries, std::ofstream &out)
     int N = Args.N;
 
     double totalAF = 0, totalRecall = 0, totalApprox = 0, totalTrue = 0;
-    int Q = (int)queries.vectors.size();
+    int Q = (int)queries.size();
     
     if (Args.maxQueries > 0)
         Q = std::min(Q, static_cast<int>(Args.maxQueries));
 
     for (int qi = 0; qi < Q; ++qi)
     {
-        const auto &q = queries.vectors[qi].values;
+        const auto &q = queries[qi].values;
         auto t0 = high_resolution_clock::now();
 
         // slide 24 Project query to hypercube vertex
@@ -263,7 +260,7 @@ void Hypercube::search(const Dataset &queries, std::ofstream &out)
         for (int id : candSet)
         {
             double d = l2(q, 
-                          Data.vectors[id].values);
+                          Data[id].values);
             distApprox.emplace_back(d, id);
             if (doRange && d <= R)
                 rlist.push_back(id);
@@ -285,8 +282,8 @@ void Hypercube::search(const Dataset &queries, std::ofstream &out)
         auto t2 = high_resolution_clock::now();
         std::vector<std::pair<double, int>> distTrue;
         distTrue.reserve(
-            Data.vectors.size());
-        for (auto &v : Data.vectors)
+            Data.size());
+        for (auto &v : Data)
             distTrue.emplace_back(l2(q, v.values), v.id);
         if (topN > 0)
         {

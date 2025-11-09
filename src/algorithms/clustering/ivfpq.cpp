@@ -7,20 +7,20 @@
 #include <iomanip>
 #include <unordered_set>
 #include <iostream>
+#include <vector>
 
 /**
  * Computes residual vectors r(x) = x - c(x) for all points ref 49
  */
-void IVFPQ::makeResiduals(const Dataset &data, const std::vector<int> &assign,
-                          std::vector<std::vector<float>> &residuals)
+void IVFPQ::makeResiduals(const std::vector<int> &assign, std::vector<std::vector<float>> &residuals)
 {
-    int N = (int)data.vectors.size(), D = data.dimension;
+    int N = (int)Data.size(), D = Dim;
     residuals.assign(N, std::vector<float>(D, 0.0f));
     for (int i = 0; i < N; ++i)
     {
         int c = assign[i];
         for (int d = 0; d < D; ++d)
-            residuals[i][d] = data.vectors[i].values[d] - Centroids[c][d];
+            residuals[i][d] = Data[i].values[d] - Centroids[c][d];
     }
 }
 
@@ -106,17 +106,14 @@ void IVFPQ::encodeAll(const std::vector<std::vector<float>> &R)
 /**
  * Builds the IVFPQ index ref 49
  */
-void IVFPQ::buildIndex(const Dataset &data)
+void IVFPQ::buildIndex()
 {
-    Data = data;
-    Dim = data.dimension;
-
     Kclusters = Args.kclusters;         // Number of coarse cells (k in slides)
     Nprobe = Args.nprobe;       // Number of cells to probe (b in slides)
     M_ = Args.Msubvectors;       // Number of subquantizers (M in slides)
     Ks_ = 1 << Args.nbits;       // Codebook size per subquantizer (s = 2^nbits in slides)
 
-    const int N = (int)Data.vectors.size();
+    const int N = (int)Data.size();
     if (N == 0)
     {
         Centroids.clear();
@@ -137,7 +134,7 @@ void IVFPQ::buildIndex(const Dataset &data)
     std::vector<std::vector<float>> Ptrain;
     Ptrain.reserve(trainN);
     for (int id : idx)
-        Ptrain.push_back(Data.vectors[id].values);
+        Ptrain.push_back(Data[id].values);
 
     kmeansWithPP(Ptrain, Kclusters, 40, (unsigned)Args.seed, Centroids, nullptr);
 
@@ -146,7 +143,7 @@ void IVFPQ::buildIndex(const Dataset &data)
     std::vector<int> fullAssign(N, -1);
     for (int i = 0; i < N; ++i)
     {
-        const auto &x = Data.vectors[i].values;
+        const auto &x = Data[i].values;
         int best = 0;
         double bd = l2(x, Centroids[0]);
         for (int c = 1; c < Kclusters; ++c)
@@ -164,7 +161,7 @@ void IVFPQ::buildIndex(const Dataset &data)
 
     // slide 49,  Compute residual vectors r(x) = x - c(x)
     std::vector<std::vector<float>> R;
-    makeResiduals(Data, fullAssign, R);
+    makeResiduals(fullAssign, R);
 
     // slide 49, Train product quantizer on residuals
     trainPQ(R);
@@ -177,7 +174,7 @@ void IVFPQ::buildIndex(const Dataset &data)
 /**
  * Performs IVFPQ search ref 50
  */
-void IVFPQ::search(const Dataset &queries, std::ofstream &out)
+void IVFPQ::search(const std::vector<VectorData> &queries, std::ofstream &out)
 {
     using namespace std::chrono;
     out << "IVFPQ\n\n";
@@ -190,14 +187,14 @@ void IVFPQ::search(const Dataset &queries, std::ofstream &out)
     double totalAF = 0.0, totalRecall = 0.0;
     double totalApproxTime = 0.0, totalTrueTime = 0.0;
     int counted = 0;
-    int Q = (int)queries.vectors.size();
+    int Q = (int)queries.size();
 
     if (Args.maxQueries > 0)
         Q = std::min(Q, Args.maxQueries);
 
     for (int qi = 0; qi < Q; ++qi)
     {
-        const auto &q = queries.vectors[qi].values;
+        const auto &q = queries[qi].values;
 
         // === Approximate search using IVFPQ ===
         auto t0 = high_resolution_clock::now();
@@ -291,7 +288,7 @@ void IVFPQ::search(const Dataset &queries, std::ofstream &out)
             for (int i = 0; i < T; ++i)
             {
                 int id = adcCandidates[i].second;
-                double exactDist = l2(q, Data.vectors[id].values);
+                double exactDist = l2(q, Data[id].values);
                 reranked.emplace_back(exactDist, id);
             }
         }
@@ -313,8 +310,8 @@ void IVFPQ::search(const Dataset &queries, std::ofstream &out)
         // === Ground truth for evaluation ===
         auto t2 = high_resolution_clock::now();
         std::vector<std::pair<double, int>> distTrue;
-        distTrue.reserve(Data.vectors.size());
-        for (const auto &v : Data.vectors)
+        distTrue.reserve(Data.size());
+        for (const auto &v : Data)
             distTrue.emplace_back(l2(q, v.values), v.id);
 
         int keepTrue = std::min(Nret, (int)distTrue.size());

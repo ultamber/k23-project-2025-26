@@ -6,6 +6,7 @@
 #include <chrono>
 #include <iomanip>
 #include <iostream>
+#include <vector>
 
 /**
  * Lloyd's algorithm for k-means clustering ref 31
@@ -101,14 +102,12 @@ void IVFFlat::kmeans(const std::vector<std::vector<float>> &P, int k, int iters,
  * 2) Assign ALL points to nearest centroid
  * 3) Build inverted lists
  */
-void IVFFlat::buildIndex(const Dataset &data)
+void IVFFlat::buildIndex()
 {
-    Data = data;
-    Dim = data.dimension;
     Kclusters = Args.kclusters;   // Number of coarse cells (k in slides)
     Nprobe = Args.nprobe; // Number of cells to probe (b in slides)
 
-    const int N = (int)Data.vectors.size();
+    const int N = (int)Data.size();
     if (N == 0 || Kclusters <= 0)
     {
         Centroids.clear();
@@ -127,7 +126,7 @@ void IVFFlat::buildIndex(const Dataset &data)
     std::vector<std::vector<float>> Ptrain;
     Ptrain.reserve(trainN);
     for (int id : idx)
-        Ptrain.push_back(Data.vectors[id].values);
+        Ptrain.push_back(Data[id].values);
 
     // slide 47: Learn centroids C = {c₁, ..., cₖ}
     kmeansWithPP(Ptrain, Kclusters, 25, (unsigned)Args.seed, Centroids, nullptr);
@@ -137,7 +136,7 @@ void IVFFlat::buildIndex(const Dataset &data)
     Lists.assign(Kclusters, {});
     for (int i = 0; i < N; ++i)
     {
-        const auto &x = Data.vectors[i].values;
+        const auto &x = Data[i].values;
 
         // j*(x) = argmin ||x - c_j||₂
         int best = 0;
@@ -163,7 +162,7 @@ void IVFFlat::buildIndex(const Dataset &data)
  * 2) Fine search: compute distances to candidates in U = ⋃_j belongs to S IL_j
  * 3) Return R nearest
  */
-void IVFFlat::search(const Dataset &queries, std::ofstream &out)
+void IVFFlat::search(const std::vector<VectorData> &queries, std::ofstream &out)
 {
     using namespace std::chrono;
     out << "IVFFlat\n\n";
@@ -174,14 +173,14 @@ void IVFFlat::search(const Dataset &queries, std::ofstream &out)
 
     double totalAF = 0.0, totalRecall = 0.0, totalApprox = 0.0, totalTrue = 0.0;
     int counted = 0;
-    int Q = (int)queries.vectors.size();
+    int Q = (int)queries.size();
 
     if (Args.maxQueries > 0)
         Q = std::min(Q, Args.maxQueries);
 
     for (int qi = 0; qi < Q; ++qi)
     {
-        const auto &q = queries.vectors[qi].values;
+        const auto &q = queries[qi].values;
 
         // === Approximate search using IVF ===
         auto t0 = high_resolution_clock::now();
@@ -221,7 +220,7 @@ void IVFFlat::search(const Dataset &queries, std::ofstream &out)
 
         for (int id : candidates)
         {
-            double d = l2(q, Data.vectors[id].values);
+            double d = l2(q, Data[id].values);
             distApprox.emplace_back(d, id);
             if (doRange && d <= Rrad)
                 rlist.push_back(id);
@@ -244,8 +243,8 @@ void IVFFlat::search(const Dataset &queries, std::ofstream &out)
         // === Ground truth: exact nearest neighbors ===
         auto t2 = high_resolution_clock::now();
         std::vector<std::pair<double, int>> distTrue;
-        distTrue.reserve(Data.vectors.size());
-        for (const auto &v : Data.vectors)
+        distTrue.reserve(Data.size());
+        for (const auto &v : Data)
             distTrue.emplace_back(l2(q, v.values), v.id);
 
         int keepTrue = std::min(Nret, (int)distTrue.size());
@@ -330,7 +329,7 @@ void IVFFlat::search(const Dataset &queries, std::ofstream &out)
  */
 double IVFFlat::silhouetteScore()
 {
-    int N = Data.vectors.size();
+    int N = Data.size();
     int k = Centroids.size();
     if (N == 0 || k <= 1)
         return 0.0;
@@ -348,7 +347,7 @@ double IVFFlat::silhouetteScore()
         int ci = label[i];
         if (ci < 0)
             continue;
-        const auto &xi = Data.vectors[i].values;
+        const auto &xi = Data[i].values;
 
         // slide 44: a(i) = average distance to objects in same cluster
         double a_i = 0.0;
@@ -357,7 +356,7 @@ double IVFFlat::silhouetteScore()
         {
             if (id == i)
                 continue;
-            a_i += l2(xi, Data.vectors[id].values);
+            a_i += l2(xi, Data[id].values);
             ++sameCount;
         }
         if (sameCount > 0)
@@ -373,7 +372,7 @@ double IVFFlat::silhouetteScore()
                 continue;
             double sum = 0.0;
             for (int id : Lists[c])
-                sum += l2(xi, Data.vectors[id].values);
+                sum += l2(xi, Data[id].values);
             double avg = sum / Lists[c].size();
             if (avg < b_i)
                 b_i = avg;
@@ -400,7 +399,7 @@ double IVFFlat::silhouetteScore()
  */
 std::vector<double> IVFFlat::silhouettePerCluster()
 {
-    int N = Data.vectors.size();
+    int N = Data.size();
     int k = Centroids.size();
     if (N == 0 || k <= 1)
         return {};
@@ -418,7 +417,7 @@ std::vector<double> IVFFlat::silhouettePerCluster()
         int ci = label[i];
         if (ci < 0)
             continue;
-        const auto &xi = Data.vectors[i].values;
+        const auto &xi = Data[i].values;
 
         double a_i = 0.0;
         int sameCount = 0;
@@ -426,7 +425,7 @@ std::vector<double> IVFFlat::silhouettePerCluster()
         {
             if (id == i)
                 continue;
-            a_i += l2(xi, Data.vectors[id].values);
+            a_i += l2(xi, Data[id].values);
             ++sameCount;
         }
         if (sameCount > 0)
@@ -441,7 +440,7 @@ std::vector<double> IVFFlat::silhouettePerCluster()
                 continue;
             double sum = 0.0;
             for (int id : Lists[c])
-                sum += l2(xi, Data.vectors[id].values);
+                sum += l2(xi, Data[id].values);
             double avg = sum / Lists[c].size();
             if (avg < b_i)
                 b_i = avg;
@@ -624,13 +623,13 @@ void IVFFlat::kmeanspp(const std::vector<std::vector<float>> &P, int k,
 
     double IVFFlat::computeSilhouetteForK(int k, unsigned seed)
     {
-        if (k <= 1 || k >= (int)Data.vectors.size())
+        if (k <= 1 || k >= (int)Data.size())
             return -1.0; // Invalid k
 
         // Build temporary clustering with k clusters
         std::vector<std::vector<float>> P;
-        P.reserve(Data.vectors.size());
-        for (const auto &v : Data.vectors)
+        P.reserve(Data.size());
+        for (const auto &v : Data)
             P.push_back(v.values);
 
         std::vector<std::vector<float>> tempCentroids;
@@ -648,14 +647,14 @@ void IVFFlat::kmeanspp(const std::vector<std::vector<float>> &P, int k,
         // Compute silhouette score ref 44
         double total = 0.0;
         int validPoints = 0;
-        int N = (int)Data.vectors.size();
+        int N = (int)Data.size();
 
         for (int i = 0; i < N; ++i)
         {
             int ci = assign[i];
             if (ci < 0 || ci >= k) continue;
 
-            const auto &xi = Data.vectors[i].values;
+            const auto &xi = Data[i].values;
 
             // a(i): average distance within same cluster
             double a_i = 0.0;
@@ -663,7 +662,7 @@ void IVFFlat::kmeanspp(const std::vector<std::vector<float>> &P, int k,
             for (int id : tempLists[ci])
             {
                 if (id == i) continue;
-                a_i += l2(xi, Data.vectors[id].values);
+                a_i += l2(xi, Data[id].values);
                 ++sameCount;
             }
             if (sameCount > 0)
@@ -679,7 +678,7 @@ void IVFFlat::kmeanspp(const std::vector<std::vector<float>> &P, int k,
                     continue;
                 double sum = 0.0;
                 for (int id : tempLists[c])
-                    sum += l2(xi, Data.vectors[id].values);
+                    sum += l2(xi, Data[id].values);
                 double avg = sum / tempLists[c].size();
                 if (avg < b_i)
                     b_i = avg;
@@ -754,8 +753,8 @@ void IVFFlat::kmeanspp(const std::vector<std::vector<float>> &P, int k,
         {
             // Build clustering
             std::vector<std::vector<float>> P;
-            P.reserve(Data.vectors.size());
-            for (const auto &v : Data.vectors)
+            P.reserve(Data.size());
+            for (const auto &v : Data)
                 P.push_back(v.values);
 
             std::vector<std::vector<float>> tempCentroids;
@@ -778,14 +777,14 @@ void IVFFlat::kmeanspp(const std::vector<std::vector<float>> &P, int k,
 
                 for (int i : tempLists[c])
                 {
-                    const auto &xi = Data.vectors[i].values;
+                    const auto &xi = Data[i].values;
 
                     double a_i = 0.0;
                     int sameCount = 0;
                     for (int id : tempLists[c])
                     {
                         if (id == i) continue;
-                        a_i += l2(xi, Data.vectors[id].values);
+                        a_i += l2(xi, Data[id].values);
                         ++sameCount;
                     }
                     if (sameCount > 0) a_i /= sameCount;
@@ -796,7 +795,7 @@ void IVFFlat::kmeanspp(const std::vector<std::vector<float>> &P, int k,
                         if (c2 == c || tempLists[c2].empty()) continue;
                         double sum = 0.0;
                         for (int id : tempLists[c2])
-                            sum += l2(xi, Data.vectors[id].values);
+                            sum += l2(xi, Data[id].values);
                         double avg = sum / tempLists[c2].size();
                         if (avg < b_i) b_i = avg;
                     }

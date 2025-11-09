@@ -2,17 +2,19 @@
 #include "arguments.hpp"
 #include "dataset.hpp"
 #include <fstream>
+#include <cmath>
+#include <vector>
 
 class SearchMethod {
 public:
-    explicit SearchMethod(const Arguments& a) : Args(a) {}
-    virtual void buildIndex(const Dataset& data) = 0;
-    virtual void search(const Dataset& queries, std::ofstream& out) = 0;
+    explicit SearchMethod(const Arguments& a, const int b, const std::vector<VectorData> c) : Args(a), Dim(b), Data(c) {}
+    virtual void buildIndex() = 0;
+    virtual void search(const std::vector<VectorData> &queries, std::ofstream& out) = 0;
 
 protected:
     Arguments Args;
-    Dataset Data;
     int Dim = 0;
+    std::vector<VectorData> Data;
 
     inline double l2(const std::vector<float> &a, const std::vector<float> &b)
     {

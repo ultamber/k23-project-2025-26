@@ -1,11 +1,14 @@
 #include <iostream>
 #include <fstream>
+#include <memory>
+#include <stdexcept>
 #include "include/arguments.hpp"
 #include "include/dataset.hpp"
 #include "include/algorithms/lsh.hpp"
 #include "include/algorithms/hypercube.hpp"
 #include "include/algorithms/clustering/ivfflat.hpp"
 #include "include/algorithms/clustering/ivfpq.hpp"
+#include "include/search_method.hpp"
 Arguments parseArgs(int argc, char *argv[])
 {
     Arguments a;
@@ -77,9 +80,21 @@ int main(int argc, char *argv[])
     std::cout << "Input: " << args.inputFile << "\nQuery: " << args.queryFile
               << "\nOutput: " << args.outputFile << "\n";
 
-    Dataset data, queries;
-    data.load(args.inputFile, args.type);
-    queries.load(args.queryFile, args.type);
+    std::unique_ptr<Dataset> data, queries;
+    if (args.type == "mnist"){
+        data = std::make_unique<MNIST_Dataset>();
+        queries = std::make_unique<MNIST_Dataset>();
+    }
+    else if (args.type == "sift"){
+        data = std::make_unique<SIFT_Dataset>();
+        queries = std::make_unique<SIFT_Dataset>();
+    }
+    else{
+        std::cerr << "Error: Unknown type. Valid values: \"mnist\" and \"sift\". \n";
+        return 1;
+    }
+    data->load(args.inputFile);
+    queries->load(args.queryFile);
 
     std::ofstream out(args.outputFile);
     if (!out)
@@ -88,53 +103,32 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    std::unique_ptr<SearchMethod> alg;
+
     if (args.useLSH)
     {
-        LSH alg(args);
-        alg.buildIndex(data);
-        alg.search(queries, out);
+        alg = std::make_unique<LSH>(args, data->dimension, data->vectors);
     }
     else if (args.useHypercube)
     {
-        Hypercube alg(args);
-        alg.buildIndex(data);
-        alg.search(queries, out);
+        alg = std::make_unique<Hypercube>(args, data->dimension, data->vectors);
     }
     else if (args.useIVFFlat)
     {
-        IVFFlat alg(args);
-        alg.buildIndex(data);
-        // double sil = alg.silhouetteScore();
-        // std::cout << std::fixed << std::setprecision(6);
-        // std::cout << "\n=== Silhouette Evaluation ===\n";
-        // std::cout << "Overall silhouette coefficient: " << sil << "\n";
-
-        // auto perCluster = alg.silhouettePerCluster();
-        // for (size_t i = 0; i < perCluster.size(); ++i)
-        //     std::cout << "Cluster " << i << ": silhouette = " << perCluster[i] << "\n";
-        // std::cout << "=============================\n";
-        alg.search(queries, out);
+        alg = std::make_unique<IVFFlat>(args, data->dimension, data->vectors);
     }
     else if (args.useIVFPQ)
     {
-        IVFPQ alg(args);
-        alg.buildIndex(data);
-        // double sil = alg.silhouetteScore();
-        // std::cout << std::fixed << std::setprecision(6);
-        // std::cout << "\n=== Silhouette Evaluation ===\n";
-        // std::cout << "Overall silhouette coefficient: " << sil << "\n";
-
-        // auto perCluster = alg.silhouettePerCluster();
-        // for (size_t i = 0; i < perCluster.size(); ++i)
-        //     std::cout << "Cluster " << i << ": silhouette = " << perCluster[i] << "\n";
-        // std::cout << "=============================\n";
-        alg.search(queries, out);
+        alg = std::make_unique<IVFPQ>(args, data->dimension, data->vectors);
     }
     else
     {
         std::cerr << "Error: specify -lsh or -hypercube or -ivfflat or -ivfpq\n";
         return 1;
     }
+
+    alg->buildIndex();
+    alg->search(queries->vectors, out);
 
     std::cout << "Search completed.\n";
     return 0;

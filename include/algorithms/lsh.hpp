@@ -8,9 +8,9 @@
 class LSH : public SearchMethod
 {
 public:
-    explicit LSH(const Arguments &a) : SearchMethod(a) {}
-    void buildIndex(const Dataset &data) override;
-    void search(const Dataset &queries, std::ofstream &out) override;
+    explicit LSH(const Arguments &a, const int &b, const std::vector<VectorData> &c): SearchMethod(a, b, c){}
+    void buildIndex() override;
+    void search(const std::vector<VectorData> &queries, std::ofstream &out) override;
 
 private:
     const std::uint64_t MOD_M = 4294967291ULL; // 2^32 - 5, a large prime
@@ -54,5 +54,4 @@ private:
 
     // Compute amplified ID(p) = Σ r_j h_j(p) mod M  ref 21
     std::uint64_t computeID(const std::vector<float> &v, int li) const;
-
 };

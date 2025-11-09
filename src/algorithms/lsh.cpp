@@ -4,24 +4,22 @@
 #include <chrono>
 #include <iomanip>
 #include <iostream>
+#include <vector>
 
 
 /**
  * Builds the LSH index for the input dataset
  * @param data Input dataset to be indexed
  */
-void LSH::buildIndex(const Dataset &data)
+void LSH::buildIndex()
 {
-    Data = data;
-    Dim = data.dimension;
-
     // Set default parameters if not provided
     w_ = Args.w > 0 ? Args.w : 4.0f;
     int L = Args.L > 0 ? Args.L : 10;
     int k = Args.k > 0 ? Args.k : 4;
 
     // TableSize heuristic ref 20): n/4
-    tableSize_ = std::max<size_t>(1, Data.vectors.size() / 4);
+    tableSize_ = std::max<size_t>(1, Data.size() / 4);
 
     // Random number generators ref 18-19)
     std::mt19937_64 rng(Args.seed);
@@ -55,9 +53,9 @@ void LSH::buildIndex(const Dataset &data)
     tables_.assign(L, std::vector<std::vector<std::pair<int, std::uint64_t>>>(tableSize_));
 
     // Insert all data points into hash tables
-    for (int id = 0; id < (int)Data.vectors.size(); ++id)
+    for (int id = 0; id < (int)Data.size(); ++id)
     {
-        const auto &p = Data.vectors[id].values;
+        const auto &p = Data[id].values;
         for (int li = 0; li < L; ++li)
         {
             // Compute ID(p) using hash function 
@@ -140,13 +138,13 @@ std::uint64_t LSH::keyFor(const std::vector<float> &v, int li) const
  * @param queries Query dataset
  * @param out Output file stream for results
  */
-void LSH::search(const Dataset &queries, std::ofstream &out)
+void LSH::search(const std::vector<VectorData> &queries, std::ofstream &out)
 {
     using namespace std::chrono;
     out << "LSH\n\n";
 
     double totalAF = 0, totalRecall = 0, totalApprox = 0, totalTrue = 0;
-    int qCount = (int)queries.vectors.size();
+    int qCount = (int)queries.size();
 
     // Optional query limit
     if (Args.maxQueries > 0)
@@ -154,7 +152,7 @@ void LSH::search(const Dataset &queries, std::ofstream &out)
 
     for (int qi = 0; qi < qCount; ++qi)
     {
-        const auto &q = queries.vectors[qi].values;
+        const auto &q = queries[qi].values;
         auto t0 = high_resolution_clock::now();
 
         // multi probe lsh: collect candidates from multiple buckets
@@ -216,7 +214,7 @@ void LSH::search(const Dataset &queries, std::ofstream &out)
 
         for (int id : candidates)
         {
-            double d = l2(q, Data.vectors[id].values);
+            double d = l2(q, Data[id].values);
             distApprox.emplace_back(d, id);
 
             // Range search: collect points within radius R 
@@ -240,8 +238,8 @@ void LSH::search(const Dataset &queries, std::ofstream &out)
         // Compute true nearest neighbors for evaluation
         auto t2 = high_resolution_clock::now();
         std::vector<std::pair<double, int>> distTrue;
-        distTrue.reserve(Data.vectors.size());
-        for (auto &v : Data.vectors)
+        distTrue.reserve(Data.size());
+        for (auto &v : Data)
             distTrue.emplace_back(l2(q, v.values), v.id);
         std::nth_element(distTrue.begin(), distTrue.begin() + N, distTrue.end());
         std::sort(distTrue.begin(), distTrue.begin() + N);

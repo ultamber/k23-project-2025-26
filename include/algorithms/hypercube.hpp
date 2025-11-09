@@ -4,6 +4,11 @@
 #include "../search_method.hpp"
 
 class Hypercube : public SearchMethod{
+public:
+    explicit Hypercube(const Arguments &a, const int &b, const std::vector<VectorData> &c) : SearchMethod(a, b, c) {}
+    void buildIndex() override;
+    void search(const std::vector<VectorData> &queries, std::ofstream &out) override;
+
 private:
     int kproj_;  // d' in the PDF
     float w_;    // Bucket width for LSH
@@ -27,8 +32,4 @@ private:
     std::uint64_t vertexOf(const std::vector<float> &v) const;
     std::vector<std::uint64_t> probesList(std::uint64_t base, int kproj, 
                                           int maxProbes, int maxHamming) const;
-public:
-    explicit Hypercube(const Arguments &a) : SearchMethod(a) {}
-    void buildIndex(const Dataset &data) override;
-    void search(const Dataset &queries, std::ofstream &out) override;
 };
