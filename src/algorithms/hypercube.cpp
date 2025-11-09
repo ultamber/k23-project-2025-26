@@ -1,6 +1,5 @@
 #include "../../include/algorithms/hypercube.hpp"
 #include <random>
-#include <limits>
 #include <algorithm>
 #include <numeric>
 #include <unordered_set>
@@ -9,19 +8,12 @@
 #include <iostream>
 
 /**
- * Computes the L2 (Euclidean) distance between two vectors
- * @param a First vector
- * @param b Second vector
- * @return The Euclidean distance between vectors a and b
- */
-
-/**
  * Builds the Hypercube index for the input dataset ref 24
  * @param data Input dataset to be indexed
  */
 void Hypercube::buildIndex(const Dataset &data)
 {
-    
+
     Data = data;
     Dim = data.dimension;
 
@@ -267,7 +259,7 @@ void Hypercube::search(const Dataset &queries, std::ofstream &out)
         std::vector<std::pair<double, int>> distApprox;
         distApprox.reserve(candSet.size());
         std::vector<int> rlist;
-        
+
         for (int id : candSet)
         {
             double d = l2(q, 

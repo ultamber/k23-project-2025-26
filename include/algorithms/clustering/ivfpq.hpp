@@ -21,9 +21,6 @@ private:
     // Helper functions
     void makeResiduals(const Dataset &data, const std::vector<int> &assign,
                        std::vector<std::vector<float>> &residuals);
-
     void trainPQ(const std::vector<std::vector<float>> &residuals);
-
     void encodeAll(const std::vector<std::vector<float>> &residuals);
-
 };

@@ -6,12 +6,15 @@
 class SearchMethod {
 public:
     explicit SearchMethod(const Arguments& a) : Args(a) {}
-    virtual ~SearchMethod() = default;
-
     virtual void buildIndex(const Dataset& data) = 0;
     virtual void search(const Dataset& queries, std::ofstream& out) = 0;
 
-    double l2(const std::vector<float> &a, const std::vector<float> &b)
+protected:
+    Arguments Args;
+    Dataset Data;
+    int Dim = 0;
+
+    inline double l2(const std::vector<float> &a, const std::vector<float> &b)
     {
         double s = 0;
         for (size_t i = 0; i < a.size(); ++i)
@@ -21,9 +24,4 @@ public:
         }
         return std::sqrt(s);
     }
-
-protected:
-    Arguments Args;
-    Dataset Data;
-    int Dim = 0;
 };

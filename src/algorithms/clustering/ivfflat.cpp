@@ -328,7 +328,7 @@ void IVFFlat::search(const Dataset &queries, std::ofstream &out)
 /**
  * Overall silhouette score ref 44-45
  */
-double IVFFlat::silhouetteScore() const
+double IVFFlat::silhouetteScore()
 {
     int N = Data.vectors.size();
     int k = Centroids.size();
@@ -398,7 +398,7 @@ double IVFFlat::silhouetteScore() const
 /**
  * Per-cluster silhouette averages ref 45
  */
-std::vector<double> IVFFlat::silhouettePerCluster() const
+std::vector<double> IVFFlat::silhouettePerCluster()
 {
     int N = Data.vectors.size();
     int k = Centroids.size();

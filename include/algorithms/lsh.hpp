@@ -1,5 +1,4 @@
 #pragma once
-#include <unordered_map>
 #include <vector>
 #include <cstdint>
 #include <climits>
@@ -26,7 +25,6 @@ private:
     double w_ = 4.0;
     // static constexpr std::uint64_t MOD_M = (1ull << 32) - 5;
     std::uint64_t keyFor(const std::vector<float> &v, int li) const;
-    static double l2(const std::vector<float> &a, const std::vector<float> &b);
 
     // --- diagnostics (only active when LSH_DEBUG=1) ---
     mutable long long min_h_seen_ = LLONG_MAX;

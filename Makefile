@@ -3,31 +3,27 @@
 # ============================================================
 
 CXX := g++
-CXXFLAGS := -std=c++17 -O2 -Wall -Iinclude -Iinclude/algorithms -Iinclude/algorithms/clustering
+CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -Iinclude
 
-SRC_DIR := src src/algorithms src/algorithms/clustering
+SRC_DIR := src
 INC_DIR := include
 OBJ_DIR := obj
 BIN_DIR := bin
 RUN_DIR := runs
 
 TARGET := $(BIN_DIR)/search
+SRC_FILES := $(shell find $(SRC_DIR) -name '*.cpp') main.cpp
+OBJ_FILES := $(SRC_FILES:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o)
 
-SRCS := $(wildcard $(addsuffix /*.cpp, $(SRC_DIR))) main.cpp
-OBJS := $(SRCS:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o)
+all: $(TARGET)
 
-all: setup $(TARGET)
-
-setup:
-	@mkdir -p $(OBJ_DIR)
+$(TARGET): $(OBJ_FILES)
 	@mkdir -p $(BIN_DIR)
-
-$(TARGET): $(OBJS)
-	$(CXX) $(CXXFLAGS) $^ -o $@
+	$(CXX) $(OBJ_FILES) -o $@
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
+	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
-
 
 clean:
 	rm -rf $(OBJ_DIR) $(BIN_DIR) $(RUN_DIR)
