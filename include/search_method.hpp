@@ -1,14 +1,10 @@
 #pragma once
 #include "arguments.hpp"
 #include "dataset.hpp"
-#include <algorithm>
-#include <chrono>
 #include <fstream>
-#include <cmath>
 #include <vector>
-#include <chrono>
 
-class NeighborInfo{
+class Neighborhood {
 public:
     int VectorId;
     double DiscoveryTime;
@@ -21,13 +17,17 @@ public:
 
     virtual void buildIndex() = 0;
     virtual void search(const std::vector<VectorData> &queries, std::ofstream& out) = 0;
+    virtual void setUpGroundTruth(const std::vector<VectorData> &queries);
 
 protected:
     Arguments Args;
     int Dim = 0;
     std::vector<VectorData> Data;
-    std::vector<NeighborInfo> GroundTruth;
+    std::vector<Neighborhood> GroundTruth;
 
     double l2(const std::vector<float> &a, const std::vector<float> &b);
-    void setUpGroundTruth();
+
+    void calculateGroundTruth(const std::vector<VectorData> &queries, bool storeInFile);
+
+    void readGroundTruthFromFile(const std::vector<VectorData> &queries);
 };

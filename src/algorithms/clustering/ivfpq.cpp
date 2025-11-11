@@ -113,9 +113,6 @@ void IVFPQ::buildIndex()
     M_ = Args.Msubvectors;       // Number of subquantizers (M in slides)
     Ks_ = 1 << Args.nbits;       // Codebook size per subquantizer (s = 2^nbits in slides)
 
-    //Setup ground truth
-    setUpGroundTruth();
-
     const int N = (int)Data.size();
     if (N == 0)
     {
@@ -311,24 +308,25 @@ void IVFPQ::search(const std::vector<VectorData> &queries, std::ofstream &out)
         totalApproxTime += tApprox;
 
         // === Ground truth for evaluation ===
-        auto t2 = high_resolution_clock::now();
-        std::vector<std::pair<double, int>> distTrue;
-        distTrue.reserve(Data.size());
-        for (const auto &v : Data)
-            distTrue.emplace_back(l2(q, v.values), v.id);
-
-        int keepTrue = std::min(Nret, (int)distTrue.size());
-        if (keepTrue > 0)
-        {
-            std::nth_element(distTrue.begin(),
-                           distTrue.begin() + keepTrue,
-                           distTrue.end());
-            std::sort(distTrue.begin(), distTrue.begin() + keepTrue);
-            distTrue.resize(keepTrue);
+        Neighborhood trueNeighborhood;
+        for (auto item : GroundTruth){
+            if (item.VectorId == queries[qi].id){
+                trueNeighborhood = item;
+                break;
+            }
         }
 
-        double tTrue = duration<double>(high_resolution_clock::now() - t2).count();
-        totalTrueTime += tTrue;
+        int keepTrue = std::min(Nret, (int)trueNeighborhood.Neighbors.size());
+        if (keepTrue > 0)
+        {
+            std::nth_element(trueNeighborhood.Neighbors.begin(),
+                           trueNeighborhood.Neighbors.begin() + keepTrue,
+                           trueNeighborhood.Neighbors.end());
+            std::sort(trueNeighborhood.Neighbors.begin(), trueNeighborhood.Neighbors.begin() + keepTrue);
+            trueNeighborhood.Neighbors.resize(keepTrue);
+        }
+
+        totalTrueTime += trueNeighborhood.DiscoveryTime;
 
         // === Quality metrics ===
         double AFq = 0.0, Rq = 0.0;
@@ -338,14 +336,14 @@ void IVFPQ::search(const std::vector<VectorData> &queries, std::ofstream &out)
             for (int i = 0; i < keepApprox; ++i)
             {
                 double da = reranked[i].first;
-                double dt = distTrue[i].first;
+                double dt = trueNeighborhood.Neighbors[i].first;
                 AFq += (dt > 0.0 ? da / dt : 1.0);
             }
             AFq /= keepApprox;
 
             // Recall@N
             std::unordered_set<int> trueSet;
-            for (const auto &p : distTrue)
+            for (const auto &p : trueNeighborhood.Neighbors)
                 trueSet.insert(p.second);
             int hits = 0;
             for (const auto &p : reranked)
@@ -365,7 +363,7 @@ void IVFPQ::search(const std::vector<VectorData> &queries, std::ofstream &out)
         {
             out << "Nearest neighbor-" << (i + 1) << ": " << reranked[i].second << "\n";
             out << "distanceApproximate: " << reranked[i].first << "\n";
-            out << "distanceTrue: " << distTrue[std::min(i, keepTrue - 1)].first << "\n";
+            out << "distanceTrue: " << trueNeighborhood.Neighbors[std::min(i, keepTrue - 1)].first << "\n";
         }
         out << "\nR-near neighbors:\n";
         for (int id : rlist)

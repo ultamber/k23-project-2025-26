@@ -6,6 +6,7 @@ struct Arguments {
     std::string inputFile;
     std::string queryFile;
     std::string outputFile;
+    std::string gtFile;
     std::string type;
 
     // General

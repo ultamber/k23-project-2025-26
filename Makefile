@@ -32,12 +32,14 @@ mnist:
 	@$(TARGET) -d ./datasets/MNIST/input.dat \
 	           -q ./datasets/MNIST/query.dat \
 	           -o output.txt \
+		   -gt ./datasets/MNIST/ground_truth.csv \
 	           -type mnist -lsh -k 4 -L 10 -w 6 -N 1 -R 2000
 
 sift:
 	@$(TARGET) -d ./datasets/SIFT/input.dat \
 	           -q ./datasets/SIFT/query.dat \
 	           -o output.txt \
+		   -gt ./datasets/SIFT/ground_truth.csv \
 	           -type mnist -lsh -k 4 -L 10 -w 6 -N 1 -R 2
 
 .PHONY: all setup clean run

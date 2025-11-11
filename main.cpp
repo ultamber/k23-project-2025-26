@@ -1,7 +1,6 @@
 #include <iostream>
 #include <fstream>
 #include <memory>
-#include <stdexcept>
 #include "include/arguments.hpp"
 #include "include/dataset.hpp"
 #include "include/algorithms/lsh.hpp"
@@ -9,6 +8,7 @@
 #include "include/algorithms/clustering/ivfflat.hpp"
 #include "include/algorithms/clustering/ivfpq.hpp"
 #include "include/search_method.hpp"
+
 Arguments parseArgs(int argc, char *argv[])
 {
     Arguments a;
@@ -21,6 +21,8 @@ Arguments parseArgs(int argc, char *argv[])
             a.queryFile = argv[++i];
         else if (flag == "-o" && i + 1 < argc)
             a.outputFile = argv[++i];
+        else if (flag == "-gt" && i + 1 < argc)
+            a.gtFile = argv[++i];
         else if (flag == "-type" && i + 1 < argc)
             a.type = argv[++i];
         else if (flag == "-lsh")
@@ -128,6 +130,7 @@ int main(int argc, char *argv[])
     }
 
     alg->buildIndex();
+    alg->setUpGroundTruth(queries->vectors);
     alg->search(queries->vectors, out);
 
     std::cout << "Search completed.\n";

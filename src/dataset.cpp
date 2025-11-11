@@ -3,15 +3,14 @@
 #include <numeric>
 #include <cmath>
 
-void MNIST_Dataset::load(const std::string &path){
+void MNIST_Dataset::load(const std::string &path) {
 
     std::ifstream f(path, std::ios::binary);
     if (!f)
         throw std::runtime_error("cannot open file: " + path);
 
     uint32_t magic = readBigEndian(f);
-    if (magic == 2051)
-    { 
+    if (magic == 2051) { 
         // MNIST images
         uint32_t n = readBigEndian(f);
         uint32_t rows = readBigEndian(f);
@@ -20,12 +19,10 @@ void MNIST_Dataset::load(const std::string &path){
         count = n;
         vectors.resize(n);
 
-        for (uint32_t i = 0; i < n; ++i)
-        {
+        for (uint32_t i = 0; i < n; ++i) {
             vectors[i].id = i;
             vectors[i].values.resize(dimension);
-            for (int j = 0; j < dimension; ++j)
-            {
+            for (int j = 0; j < dimension; ++j) {
                 unsigned char val;
                 f.read((char *)&val, 1);
                 vectors[i].values[j] = static_cast<float>(val) / 255.0f;
@@ -38,8 +35,7 @@ void MNIST_Dataset::load(const std::string &path){
                 vectors[i].values.begin(),
                 0.0));
 
-            if (norm > 1e-12)
-            { // prevent division by zero
+            if (norm > 1e-12) { // prevent division by zero
                 for (auto &x : vectors[i].values)
                     x /= static_cast<float>(norm);
             }
@@ -72,8 +68,7 @@ void SIFT_Dataset::load(const std::string &path) {
 
     f.seekg(0, std::ios::beg);
 
-    for (size_t i = 0; i < n; ++i)
-    {
+    for (size_t i = 0; i < n; ++i) {
         int d;
         f.read((char *)&d, 4);
         if (d != dim)

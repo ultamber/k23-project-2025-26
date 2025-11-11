@@ -238,12 +238,14 @@ void LSH::search(const std::vector<VectorData> &queries, std::ofstream &out)
         totalApprox += tApprox;
 
         // Compute true nearest neighbors for evaluation
-        NeighborInfo trueNeighborhood;
+        Neighborhood trueNeighborhood;
         for (auto item : GroundTruth){
             if (item.VectorId == queries[qi].id){
                 trueNeighborhood = item;
+                break;
             }
         }
+        totalTrue += trueNeighborhood.DiscoveryTime;
 
         // Calculate quality metrics
         double AFq = 0, recallq = 0;
@@ -254,14 +256,12 @@ void LSH::search(const std::vector<VectorData> &queries, std::ofstream &out)
 
             // Check if approximate neighbor is in true top-N
             int aid = distApprox[i].second;
-            for (int j = 0; j < N; ++j)
-            {
-                if (aid == trueNeighborhood.Neighbors[j].second)
+            for (const auto& trueNeighbors : trueNeighborhood.Neighbors)
+                if (aid == trueNeighbors.second)
                 {
                     recallq += 1;
                     break;
                 }
-            }
         }
 
         if (N > 0)

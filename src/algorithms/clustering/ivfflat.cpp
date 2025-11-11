@@ -21,9 +21,6 @@ void IVFFlat::kmeans(const std::vector<std::vector<float>> &P, int k, int iters,
     std::mt19937_64 rng(seed);
     std::uniform_int_distribution<int> uni(0, N - 1);
 
-    //Setup ground truth
-    setUpGroundTruth();
-
     // Initialize: k distinct random centers ref 31
     Centroids.assign(k, std::vector<float>(D, 0.0f));
     std::vector<int> init;
@@ -244,24 +241,24 @@ void IVFFlat::search(const std::vector<VectorData> &queries, std::ofstream &out)
         totalApprox += tApprox;
 
         // === Ground truth: exact nearest neighbors ===
-        auto t2 = high_resolution_clock::now();
-        std::vector<std::pair<double, int>> distTrue;
-        distTrue.reserve(Data.size());
-        for (const auto &v : Data)
-            distTrue.emplace_back(l2(q, v.values), v.id);
-
-        int keepTrue = std::min(Nret, (int)distTrue.size());
-        if (keepTrue > 0)
-        {
-            std::nth_element(distTrue.begin(),
-                           distTrue.begin() + keepTrue,
-                           distTrue.end());
-            std::sort(distTrue.begin(), distTrue.begin() + keepTrue);
-            distTrue.resize(keepTrue);
+        Neighborhood trueNeighborhood;
+        for (auto item : GroundTruth){
+            if (item.VectorId == queries[qi].id){
+                trueNeighborhood = item;
+                break;
+            }
         }
 
-        double tTrue = duration<double>(high_resolution_clock::now() - t2).count();
-        totalTrue += tTrue;
+        int keepTrue = std::min(Nret, (int)trueNeighborhood.Neighbors.size());
+        if (keepTrue > 0)
+        {
+            std::nth_element(trueNeighborhood.Neighbors.begin(),
+                           trueNeighborhood.Neighbors.begin() + keepTrue,
+                           trueNeighborhood.Neighbors.end());
+            std::sort(trueNeighborhood.Neighbors.begin(), trueNeighborhood.Neighbors.begin() + keepTrue);
+            trueNeighborhood.Neighbors.resize(keepTrue);
+        }
+        totalTrue += trueNeighborhood.DiscoveryTime;
 
         // === Quality metrics ===
         double AFq = 0.0, Rq = 0.0;
@@ -271,7 +268,7 @@ void IVFFlat::search(const std::vector<VectorData> &queries, std::ofstream &out)
             for (int i = 0; i < keepApprox; ++i)
             {
                 double da = distApprox[i].first;
-                double dt = distTrue[i].first;
+                double dt = trueNeighborhood.Neighbors[i].first;
                 AFq += (dt > 0.0 ? da / dt : 1.0);
             }
             AFq /= keepApprox;
@@ -282,7 +279,7 @@ void IVFFlat::search(const std::vector<VectorData> &queries, std::ofstream &out)
                 int aid = distApprox[i].second;
                 for (int j = 0; j < keepTrue; ++j)
                 {
-                    if (aid == distTrue[j].second)
+                    if (aid == trueNeighborhood.Neighbors[j].second)
                     {
                         Rq += 1.0;
                         break;
@@ -303,7 +300,7 @@ void IVFFlat::search(const std::vector<VectorData> &queries, std::ofstream &out)
         {
             out << "Nearest neighbor-" << (i + 1) << ": " << distApprox[i].second << "\n";
             out << "distanceApproximate: " << distApprox[i].first << "\n";
-            out << "distanceTrue: " << distTrue[std::min(i, keepTrue - 1)].first << "\n";
+            out << "distanceTrue: " << trueNeighborhood.Neighbors[std::min(i, keepTrue - 1)].first << "\n";
         }
         out << "\nR-near neighbors:\n";
         for (int id : rlist)

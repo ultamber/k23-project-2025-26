@@ -23,9 +23,6 @@ void Hypercube::buildIndex()
     // slide 18: w ∈ [2, 6], larger for range queries
     w_ = (Args.w > 0) ? Args.w : 4.0f;
 
-    //Setup ground truth
-    setUpGroundTruth();
-
     // Random number generators
     std::mt19937_64 rng(Args.seed);
     std::normal_distribution<double> normal(0.0, 1.0);    // For LSH projections
@@ -282,12 +279,14 @@ void Hypercube::search(const std::vector<VectorData> &queries, std::ofstream &ou
         totalApprox += tApprox;
 
         // Compute true nearest neighbors for evaluation
-        NeighborInfo trueNeighborhood;
+        Neighborhood trueNeighborhood;
         for (auto item : GroundTruth){
             if (item.VectorId == queries[qi].id){
                 trueNeighborhood = item;
+                break;
             }
         }
+        totalTrue += trueNeighborhood.DiscoveryTime;
 
         // Metrics
         double AFq = 0, recallq = 0;
@@ -296,8 +295,8 @@ void Hypercube::search(const std::vector<VectorData> &queries, std::ofstream &ou
             double da = distApprox[i].first, dt = trueNeighborhood.Neighbors[i].first;
             AFq += (dt > 0 ? da / dt : 1.0);
             int aid = distApprox[i].second;
-            for (int j = 0; j < topN; ++j)
-                if (aid == trueNeighborhood.Neighbors[j].second)
+            for (const auto& trueNeighbors : trueNeighborhood.Neighbors)
+                if (aid == trueNeighbors.second)
                 {
                     recallq += 1;
                     break;

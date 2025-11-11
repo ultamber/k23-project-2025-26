@@ -137,7 +137,7 @@ should_run() {
 # Experiments
 # -----------------------------
 run_lsh() {
-  local seeds=("1" "2")
+  local seeds=("1")
   local ks=("2" "3" "4")
   local Ls=("5" "10" "15")
   local ws=("2.0" "4.0" "6.0" "8.0")
@@ -150,9 +150,10 @@ run_lsh() {
           should_run || continue
           local tag="lsh_s${seed}_k${k}_L${L}_w${w}"
           local out="${OUTDIR}/${tag}.txt"
+          local gt="${OUTDIR}/ground_truth.csv"
           local err="${OUTDIR}/${tag}.err"
           echo "==> LSH ${tag}"
-          "$BIN" -d "$DATA" -q "$QUER" -o "$out" -type "$TYPE" \
+          "$BIN" -d "$DATA" -q "$QUER" -o "$out" -gt "$gt" -type "$TYPE" \
             -lsh -k "$k" -L "$L" -w "$w" -N 1 -R "$R_PARAM" -seed "$seed" 2> "$err"
           local metrics=$(parse_metrics "$out")
           local diag=$(parse_lsh_diag "$err")
@@ -191,8 +192,9 @@ run_cube() {
           should_run || continue
           local tag="cube_s${seed}_kproj${kp}_M${M}_probes${pr}"
           local out="${OUTDIR}/${tag}.txt"
+          local gt="${OUTDIR}/ground_truth.csv"
           echo "==> Hypercube ${tag}"
-          "$BIN" -d "$DATA" -q "$QUER" -o "$out" -type "$TYPE" \
+          "$BIN" -d "$DATA" -q "$QUER" -o "$out" -gt "$gt" -type "$TYPE" \
             -hypercube -kproj "$kp" -M "$M" -probes "$pr" -N 1 -R "$R_PARAM" -seed "$seed"
           local metrics=$(parse_metrics "$out")
           echo "Hypercube,kproj=${kp};M=${M};probes=${pr};seed=${seed},${metrics},,,,,," >> "$SUMMARY"
@@ -215,8 +217,9 @@ run_ivfflat() {
         should_run || continue
         local tag="ivfflat_s${seed}_kc${kc}_np${np}"
         local out="${OUTDIR}/${tag}.txt"
+        local gt="${OUTDIR}/ground_truth.csv"
         echo "==> IVFFlat ${tag}"
-        "$BIN" -d "$DATA" -q "$QUER" -o "$out" -type "$TYPE" \
+        "$BIN" -d "$DATA" -q "$QUER" -o "$out" -gt "$gt" -type "$TYPE" \
           -ivfflat -kclusters "$kc" -nprobe "$np" -N 1 -R "$R_PARAM" -seed "$seed"
         local metrics=$(parse_metrics "$out")
         echo "IVFFlat,kclusters=${kc};nprobe=${np};seed=${seed},${metrics},,,,,," >> "$SUMMARY"
@@ -242,8 +245,9 @@ run_ivfpq() {
             should_run || continue
             local tag="ivfpq_s${seed}_kc${kc}_np${np}_M${Msub}_nb${nb}"
             local out="${OUTDIR}/${tag}.txt"
+            local gt="${OUTDIR}/ground_truth.csv"
             echo "==> IVFPQ ${tag}"
-            "$BIN" -d "$DATA" -q "$QUER" -o "$out" -type "$TYPE" \
+            "$BIN" -d "$DATA" -q "$QUER" -o "$out" -gt "$gt" -type "$TYPE" \
               -ivfpq -kclusters "$kc" -nprobe "$np" -Msub "$Msub" -nbits "$nb" \
               -N 1 -R "$R_PARAM" -seed "$seed"
             local metrics=$(parse_metrics "$out")
@@ -261,7 +265,7 @@ run_ivfpq() {
 # -----------------------------
 run_lsh
 run_cube
-run_ivfflat
-run_ivfpq
+#run_ivfflat
+#run_ivfpq
 
 echo "==> Done. Summary: $SUMMARY"
