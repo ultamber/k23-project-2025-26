@@ -204,7 +204,6 @@ void Hypercube::search(const std::vector<VectorData> &queries, std::ofstream &ou
     bool doRange = Args.rangeSearch;
     int N = Args.N;
 
-    double totalAF = 0, totalRecall = 0, totalApprox = 0, totalTrue = 0;
     int Q = (int)queries.size();
     
     if (Args.maxQueries > 0)
@@ -276,64 +275,7 @@ void Hypercube::search(const std::vector<VectorData> &queries, std::ofstream &ou
         }
         
         double tApprox = duration<double>(high_resolution_clock::now() - t0).count();
-        totalApprox += tApprox;
-
-        // Compute true nearest neighbors for evaluation
-        Neighborhood trueNeighborhood;
-        for (auto item : GroundTruth){
-            if (item.VectorId == queries[qi].id){
-                trueNeighborhood = item;
-                break;
-            }
-        }
-        totalTrue += trueNeighborhood.DiscoveryTime;
-
-        // Metrics
-        double AFq = 0, recallq = 0;
-        for (int i = 0; i < topN; ++i)
-        {
-            double da = distApprox[i].first, dt = trueNeighborhood.Neighbors[i].first;
-            AFq += (dt > 0 ? da / dt : 1.0);
-            int aid = distApprox[i].second;
-            for (const auto& trueNeighbors : trueNeighborhood.Neighbors)
-                if (aid == trueNeighbors.second)
-                {
-                    recallq += 1;
-                    break;
-                }
-        }
-        if (topN > 0 && !distApprox.empty())
-        {
-            AFq /= distApprox.size();
-            recallq /= topN;
-        }
-        totalAF += AFq;
-        totalRecall += recallq;
-
-        // Output per query
-        out << "Query: " << qi << "\n"
-            << std::fixed << std::setprecision(6);
-        for (int i = 0; i < topN; ++i)
-        {
-            out << "Nearest neighbor-" << (i + 1) << ": " << distApprox[i].second << "\n";
-            out << "distanceApproximate: " << distApprox[i].first << "\n";
-            out << "distanceTrue: " << trueNeighborhood.Neighbors[i].first << "\n";
-        }
-        out << "\nR-near neighbors:\n";
-        for (int id : rlist)
-            out << id << "\n";
-        out << "\n";
+        calculatePerQueryMetrics(queries[qi].id, qi, tApprox, distApprox, rlist, out);
     }
-
-    // Summary
-    double avgAF = totalAF / Q, avgRecall = totalRecall / Q;
-    double avgApprox = totalApprox / Q, avgTrue = totalTrue / Q;
-    double qps = (avgApprox > 0) ? 1.0 / avgApprox : 0.0;
-    
-    out << "---- Summary (averages over queries) ----\n";
-    out << "Average AF: " << avgAF << "\n";
-    out << "Recall@N: " << avgRecall << "\n";
-    out << "QPS: " << qps << "\n";
-    out << "tApproximateAverage: " << avgApprox << "\n";
-    out << "tTrueAverage: " << avgTrue << "\n";
+    printSummary(Q, out);
 }

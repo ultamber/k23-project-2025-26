@@ -3,7 +3,6 @@
 #include <random>
 #include <algorithm>
 #include <chrono>
-#include <iomanip>
 #include <iostream>
 #include <vector>
 
@@ -145,7 +144,6 @@ void LSH::search(const std::vector<VectorData> &queries, std::ofstream &out)
     using namespace std::chrono;
     out << "LSH\n\n";
 
-    double totalAF = 0, totalRecall = 0, totalApprox = 0, totalTrue = 0;
     int qCount = (int)queries.size();
 
     // Optional query limit
@@ -235,63 +233,9 @@ void LSH::search(const std::vector<VectorData> &queries, std::ofstream &out)
         }
 
         double tApprox = duration<double>(high_resolution_clock::now() - t0).count();
-        totalApprox += tApprox;
 
-        // Compute true nearest neighbors for evaluation
-        Neighborhood trueNeighborhood;
-        for (auto item : GroundTruth){
-            if (item.VectorId == queries[qi].id){
-                trueNeighborhood = item;
-                break;
-            }
-        }
-        totalTrue += trueNeighborhood.DiscoveryTime;
-
-        // Calculate quality metrics
-        double AFq = 0, recallq = 0;
-        for (int i = 0; i < N; ++i)
-        {
-            double da = distApprox[i].first, dt = trueNeighborhood.Neighbors[i].first;
-            AFq += (dt > 0 ? da / dt : 1.0);
-
-            // Check if approximate neighbor is in true top-N
-            int aid = distApprox[i].second;
-            for (const auto& trueNeighbors : trueNeighborhood.Neighbors)
-                if (aid == trueNeighbors.second)
-                {
-                    recallq += 1;
-                    break;
-                }
-        }
-
-        if (N > 0)
-        {
-            AFq /= N;
-            recallq /= N;
-        }
-        totalAF += AFq;
-        totalRecall += recallq;
-
-        // Output results
-        out << "Query: " << qi << "\n"
-            << std::fixed << std::setprecision(6);
-        for (int i = 0; i < N; ++i)
-        {
-            out << "Nearest neighbor-" << (i + 1) << ": " << distApprox[i].second << "\n";
-            out << "distanceApproximate: " << distApprox[i].first << "\n";
-            out << "distanceTrue: " << trueNeighborhood.Neighbors[i].first << "\n";
-        }
-        out << "\nR-near neighbors:\n";
-        for (int id : rlist)
-            out << id << "\n";
-        out << "\n";
+        calculatePerQueryMetrics(queries[qi].id, qi, tApprox, distApprox, rlist, out);
     }
 
-    // Summary statistics
-    out << "---- Summary (averages over queries) ----\n";
-    out << "Average AF: " << (totalAF / qCount) << "\n";
-    out << "Recall@N: " << (totalRecall / qCount) << "\n";
-    out << "QPS: " << (1.0 / (totalApprox / qCount)) << "\n";
-    out << "tApproximateAverage: " << (totalApprox / qCount) << "\n";
-    out << "tTrueAverage: " << (totalTrue / qCount) << "\n";
-}
+    printSummary(qCount, out);
+};

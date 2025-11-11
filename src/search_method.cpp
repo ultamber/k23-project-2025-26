@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <fstream>
 #include <iostream>
+#include <iomanip>
 #include <ostream>
 #include <sstream>
 #include <string>
@@ -110,3 +111,67 @@ void SearchMethod::setUpGroundTruth(const std::vector<VectorData> &queries) {
     readGroundTruthFromFile(queries);
 }
 
+void SearchMethod::calculatePerQueryMetrics(int queryId, int queryIndex, double tApproximate, std::vector<std::pair<double, int>> distApproximate, std::vector<int> rlist, std::ofstream& out){
+
+        TotalApproximation += tApproximate;
+
+        // Compute true nearest neighbors for evaluation
+        Neighborhood trueNeighborhood;
+        for (auto item : GroundTruth){
+            if (item.VectorId == queryId){
+                trueNeighborhood = item;
+                break;
+            }
+        }
+        TotalTrue += trueNeighborhood.DiscoveryTime;
+
+        // Calculate quality metrics
+        double AFq = 0, recallq = 0;
+        for (int i = 0; i < Args.N; ++i)
+        {
+            double da = distApproximate[i].first, dt = trueNeighborhood.Neighbors[i].first;
+            AFq += (dt > 0 ? da / dt : 1.0);
+
+            // Check if approximate neighbor is in true top-N
+            int aid = distApproximate[i].second;
+            for (const auto& trueNeighbors : trueNeighborhood.Neighbors)
+                if (aid == trueNeighbors.second)
+                {
+                    recallq += 1;
+                    break;
+                }
+        }
+
+        if (Args.N > 0)
+        {
+            AFq /= Args.N;
+            recallq /= Args.N;
+        }
+        TotalAF += AFq;
+        TotalRecall += recallq;
+
+        // Output results
+        out << "Query: " << queryIndex << "\n"
+            << std::fixed << std::setprecision(6);
+        for (int i = 0; i < Args.N; ++i)
+        {
+            out << "Nearest neighbor-" << (i + 1) << ": " << distApproximate[i].second << "\n";
+            out << "distanceApproximate: " << distApproximate[i].first << "\n";
+            out << "distanceTrue: " << trueNeighborhood.Neighbors[i].first << "\n";
+        }
+        out << "\nR-near neighbors:\n";
+        for (int id : rlist)
+            out << id << "\n";
+        out << "\n";
+};
+
+
+void SearchMethod::printSummary(int qCount, std::ofstream &out){
+    out << std::fixed << std::setprecision(6);
+    out << "---- Summary (averages over queries) ----\n";
+    out << "Average AF: " << (TotalAF / qCount) << "\n";
+    out << "Recall@N: " << (TotalRecall / qCount) << "\n";
+    out << "QPS: " << (1.0 / (TotalApproximation / qCount)) << "\n";
+    out << "tApproximateAverage: " << (TotalApproximation / qCount) << "\n";
+    out << "tTrueAvERAGE: " << (TotalTrue / qCount) << "\n";
+};

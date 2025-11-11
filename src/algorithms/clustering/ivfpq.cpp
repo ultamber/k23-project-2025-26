@@ -183,10 +183,6 @@ void IVFPQ::search(const std::vector<VectorData> &queries, std::ofstream &out)
     const bool doRange = Args.rangeSearch;
     const int Nret = std::max(1, Args.N);
     const int rerankTop = 100; // Re-rank top T candidates with exact distances
-
-    double totalAF = 0.0, totalRecall = 0.0;
-    double totalApproxTime = 0.0, totalTrueTime = 0.0;
-    int counted = 0;
     int Q = (int)queries.size();
 
     if (Args.maxQueries > 0)
@@ -305,84 +301,7 @@ void IVFPQ::search(const std::vector<VectorData> &queries, std::ofstream &out)
         }
 
         double tApprox = duration<double>(high_resolution_clock::now() - t0).count();
-        totalApproxTime += tApprox;
-
-        // === Ground truth for evaluation ===
-        Neighborhood trueNeighborhood;
-        for (auto item : GroundTruth){
-            if (item.VectorId == queries[qi].id){
-                trueNeighborhood = item;
-                break;
-            }
-        }
-
-        int keepTrue = std::min(Nret, (int)trueNeighborhood.Neighbors.size());
-        if (keepTrue > 0)
-        {
-            std::nth_element(trueNeighborhood.Neighbors.begin(),
-                           trueNeighborhood.Neighbors.begin() + keepTrue,
-                           trueNeighborhood.Neighbors.end());
-            std::sort(trueNeighborhood.Neighbors.begin(), trueNeighborhood.Neighbors.begin() + keepTrue);
-            trueNeighborhood.Neighbors.resize(keepTrue);
-        }
-
-        totalTrueTime += trueNeighborhood.DiscoveryTime;
-
-        // === Quality metrics ===
-        double AFq = 0.0, Rq = 0.0;
-        if (keepApprox > 0 && keepTrue > 0)
-        {
-            // Approximation Factor
-            for (int i = 0; i < keepApprox; ++i)
-            {
-                double da = reranked[i].first;
-                double dt = trueNeighborhood.Neighbors[i].first;
-                AFq += (dt > 0.0 ? da / dt : 1.0);
-            }
-            AFq /= keepApprox;
-
-            // Recall@N
-            std::unordered_set<int> trueSet;
-            for (const auto &p : trueNeighborhood.Neighbors)
-                trueSet.insert(p.second);
-            int hits = 0;
-            for (const auto &p : reranked)
-                if (trueSet.count(p.second))
-                    ++hits;
-            Rq = (double)hits / (double)keepTrue;
-
-            totalAF += AFq;
-            totalRecall += Rq;
-            ++counted;
-        }
-
-        // === Output per query ===
-        out << "Query: " << qi << "\n";
-        out << std::fixed << std::setprecision(6);
-        for (int i = 0; i < keepApprox; ++i)
-        {
-            out << "Nearest neighbor-" << (i + 1) << ": " << reranked[i].second << "\n";
-            out << "distanceApproximate: " << reranked[i].first << "\n";
-            out << "distanceTrue: " << trueNeighborhood.Neighbors[std::min(i, keepTrue - 1)].first << "\n";
-        }
-        out << "\nR-near neighbors:\n";
-        for (int id : rlist)
-            out << id << "\n";
-        out << "\n";
+        calculatePerQueryMetrics(queries[qi].id, qi, tApprox, reranked, rlist, out);
     }
-
-    // === Summary statistics ===
-    out << "---- Summary (averages over queries) ----\n";
-    out << std::fixed << std::setprecision(6);
-    double avgAF = (counted > 0) ? totalAF / counted : 0.0;
-    double avgRecall = (counted > 0) ? totalRecall / counted : 0.0;
-    double avgApprox = (counted > 0) ? totalApproxTime / counted : 0.0;
-    double avgTrue = (counted > 0) ? totalTrueTime / counted : 0.0;
-    double qps = (avgApprox > 0.0) ? 1.0 / avgApprox : 0.0;
-
-    out << "Average AF: " << avgAF << "\n";
-    out << "Recall@N: " << avgRecall << "\n";
-    out << "QPS: " << qps << "\n";
-    out << "tApproximateAverage: " << avgApprox << "\n";
-    out << "tTrueAverage: " << avgTrue << "\n";
+    printSummary(Q, out);
 }

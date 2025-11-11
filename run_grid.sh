@@ -265,7 +265,7 @@ run_ivfpq() {
 # -----------------------------
 run_lsh
 run_cube
-#run_ivfflat
-#run_ivfpq
+run_ivfflat
+run_ivfpq
 
 echo "==> Done. Summary: $SUMMARY"

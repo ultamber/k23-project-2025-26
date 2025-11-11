@@ -2,6 +2,7 @@
 #include "arguments.hpp"
 #include "dataset.hpp"
 #include <fstream>
+#include <utility>
 #include <vector>
 
 class Neighborhood {
@@ -24,10 +25,19 @@ protected:
     int Dim = 0;
     std::vector<VectorData> Data;
     std::vector<Neighborhood> GroundTruth;
+    double TotalTrue;
+    double TotalApproximation;
+    double TotalAF;
+    double TotalRecall;
+    double QPS;
 
     double l2(const std::vector<float> &a, const std::vector<float> &b);
 
     void calculateGroundTruth(const std::vector<VectorData> &queries, bool storeInFile);
 
     void readGroundTruthFromFile(const std::vector<VectorData> &queries);
+
+    virtual void calculatePerQueryMetrics(int queryId, int queryIndex, double tApproximate, std::vector<std::pair<double, int>> distApproximate, std::vector<int> rlist, std::ofstream& out);
+
+    virtual void printSummary(int qCount, std::ofstream &out);
 };
