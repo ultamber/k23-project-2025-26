@@ -1,5 +1,4 @@
 #include "../include/search_method.hpp"
-#include <chrono>
 #include <cmath>
 #include <algorithm>
 #include <cstdio>
@@ -9,21 +8,20 @@
 #include <ostream>
 #include <sstream>
 #include <string>
-#include <vector>
 
 void SearchMethod::calculateGroundTruth(const std::vector<VectorData> &queries, bool storeInFile) {
     GroundTruth.reserve(queries.size());
 
-    std::cout << "Building Ground Truth" << std::endl;
+    cout << "Building Ground Truth" << std::endl;
     for(auto &vector : queries){
-        std::cout << "Brute-Force Search for: " << vector.id << std::endl;
+        cout << "Brute-Force Search for: " << vector.id << endl;
 
         Neighborhood item;
         item.VectorId = vector.id;
         item.DiscoveryTime = 0.0;
 
-        auto t2 = std::chrono::high_resolution_clock::now();
-        std::vector<std::pair<double, int>> distTrue;
+        auto t2 = high_resolution_clock::now();
+        std::vector<pair<double, int>> distTrue;
         distTrue.reserve(Data.size());
         for(auto &candidate : Data) {
             if (candidate.id == vector.id) {
@@ -32,35 +30,35 @@ void SearchMethod::calculateGroundTruth(const std::vector<VectorData> &queries, 
             distTrue.emplace_back(l2(vector.values, candidate.values), candidate.id);
         }
 
-        std::nth_element(distTrue.begin(), distTrue.begin() + Args.N, distTrue.end());
-        std::sort(distTrue.begin(), distTrue.begin() + Args.N);
-        item.DiscoveryTime += std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - t2).count();
+        nth_element(distTrue.begin(), distTrue.begin() + Args.N, distTrue.end());
+        sort(distTrue.begin(), distTrue.begin() + Args.N);
+        item.DiscoveryTime += duration<double>(high_resolution_clock::now() - t2).count();
 
-        item.Neighbors = std::vector<std::pair<double,int>>(distTrue.begin(), distTrue.begin() + Args.N);
+        item.Neighbors = std::vector<pair<double,int>>(distTrue.begin(), distTrue.begin() + Args.N);
         GroundTruth.emplace_back(item);
     }
 
     if (!storeInFile)
         return;
 
-    std::ofstream f(Args.gtFile);
+    ofstream f(Args.gtFile);
     for (const auto& row : GroundTruth) {
         f << row.VectorId << "," << row.DiscoveryTime << ",";
         for (const auto& n : row.Neighbors) {
             f << n.first << "," << n.second;
         }
-        f << std::endl;
+        f << endl;
     }
     f.close();
 }
 
-void SearchMethod::readGroundTruthFromFile(const std::vector<VectorData> &queries) {
-    std::ifstream f(Args.gtFile);
-    std::vector<Neighborhood> fData;
+void SearchMethod::readGroundTruthFromFile(const vector<VectorData> &queries) {
+    ifstream f(Args.gtFile);
+    vector<Neighborhood> fData;
 
-    std::string line;
-    while (std::getline(f, line)) {
-        std::stringstream ss(line);
+    string line;
+    while (getline(f, line)) {
+        stringstream ss(line);
 
         Neighborhood row;
         char comma;
@@ -77,7 +75,7 @@ void SearchMethod::readGroundTruthFromFile(const std::vector<VectorData> &querie
     f.close();
 
     if (fData.size() != queries.size()){
-        std::cout << "Invalid data in groundtruth file" << std::endl;
+        cout << "Invalid data in groundtruth file" << endl;
         calculateGroundTruth(queries, true);
         return;
     }
@@ -85,23 +83,23 @@ void SearchMethod::readGroundTruthFromFile(const std::vector<VectorData> &querie
     GroundTruth = fData;
 }
 
-double SearchMethod::l2(const std::vector<float> &a, const std::vector<float> &b) {
+double SearchMethod::l2(const vector<float> &a, const vector<float> &b) {
     double s = 0;
     for (size_t i = 0; i < a.size(); ++i) {
         double d = a[i] - b[i];
         s += d * d;
     }
-    return std::sqrt(s);
+    return sqrt(s);
 }
 
-void SearchMethod::setUpGroundTruth(const std::vector<VectorData> &queries) {
+void SearchMethod::setUpGroundTruth(const vector<VectorData> &queries) {
 
     if (Args.gtFile.empty()) {
         calculateGroundTruth(queries, false);
         return;
     }
 
-    std::ifstream f(Args.gtFile);
+    ifstream f(Args.gtFile);
     if (!f.good()) {
         f.close(); 
         calculateGroundTruth(queries, true);
@@ -111,7 +109,7 @@ void SearchMethod::setUpGroundTruth(const std::vector<VectorData> &queries) {
     readGroundTruthFromFile(queries);
 }
 
-void SearchMethod::calculatePerQueryMetrics(int queryId, int queryIndex, double tApproximate, std::vector<std::pair<double, int>> distApproximate, std::vector<int> rlist, std::ofstream& out){
+void SearchMethod::calculatePerQueryMetrics(int queryId, int queryIndex, double tApproximate, vector<pair<double, int>> distApproximate, vector<int> rlist, ofstream& out){
 
         TotalApproximation += tApproximate;
 
@@ -152,7 +150,7 @@ void SearchMethod::calculatePerQueryMetrics(int queryId, int queryIndex, double 
 
         // Output results
         out << "Query: " << queryIndex << "\n"
-            << std::fixed << std::setprecision(6);
+            << fixed << setprecision(6);
         for (int i = 0; i < Args.N; ++i)
         {
             out << "Nearest neighbor-" << (i + 1) << ": " << distApproximate[i].second << "\n";
@@ -166,8 +164,8 @@ void SearchMethod::calculatePerQueryMetrics(int queryId, int queryIndex, double 
 };
 
 
-void SearchMethod::printSummary(int qCount, std::ofstream &out){
-    out << std::fixed << std::setprecision(6);
+void SearchMethod::printSummary(int qCount, ofstream &out){
+    out << fixed << std::setprecision(6);
     out << "---- Summary (averages over queries) ----\n";
     out << "Average AF: " << (TotalAF / qCount) << "\n";
     out << "Recall@N: " << (TotalRecall / qCount) << "\n";

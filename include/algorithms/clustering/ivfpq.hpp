@@ -11,8 +11,7 @@ public:
     void search(const std::vector<VectorData> &queries, std::ofstream &out) override;
 
 private:
-    int M_ = 0;               // subquantizers
-    int Ks_ = 256;            // 2^nbits
+    int Ks_ = 1 << Args.nbits;            // 2^nbits
     std::vector<int> subdim_; // size M_
 
     std::vector<std::vector<std::vector<float>>> codebooks_; // [M][Ks][subdim[m]]

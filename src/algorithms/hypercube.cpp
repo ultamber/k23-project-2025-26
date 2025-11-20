@@ -4,7 +4,6 @@
 #include <numeric>
 #include <unordered_set>
 #include <chrono>
-#include <iomanip>
 #include <iostream>
 #include <vector>
 
@@ -17,21 +16,21 @@ void Hypercube::buildIndex()
     // slide 24: d' = floor(log_2 n) - {1,2,3}
     const size_t n = 
         Data.size();
-    int dlog = (n > 0) ? (int)std::floor(std::log2((double)std::max<size_t>(1, n))) : 1;
-    kproj_ = (Args.kproj > 0) ? Args.kproj : std::max(1, dlog - 2);
+    int dlog = (n > 0) ? (int)floor(log2((double)max<size_t>(1, n))) : 1;
+    kproj_ = (Args.kproj > 0) ? Args.kproj : max(1, dlog - 2);
 
     // slide 18: w ∈ [2, 6], larger for range queries
     w_ = (Args.w > 0) ? Args.w : 4.0f;
 
     // Random number generators
-    std::mt19937_64 rng(Args.seed);
-    std::normal_distribution<double> normal(0.0, 1.0);    // For LSH projections
-    std::uniform_real_distribution<float> unif(0.0f, w_); // For LSH shifts
-    std::uniform_int_distribution<uint32_t> uni32(1u, 0xffffffffu); // For f_j hash functions
+    mt19937_64 rng(Args.seed);
+    normal_distribution<double> normal(0.0, 1.0);    // For LSH projections
+    uniform_real_distribution<float> unif(0.0f, w_); // For LSH shifts
+    uniform_int_distribution<uint32_t> uni32(1u, 0xffffffffu); // For f_j hash functions
 
     // slide 24: Generate d' base LSH functions h_j
     // Each h_j(p) = floor((a_j · p + t_j) / )
-    proj_.assign(kproj_, std::vector<float>(Dim));
+    proj_.assign(kproj_, vector<float>(Dim));
     shift_.assign(kproj_, 0.0f);
     for (int j = 0; j < kproj_; ++j)
     {
@@ -47,8 +46,8 @@ void Hypercube::buildIndex()
     fB_.resize(kproj_);
     for (int j = 0; j < kproj_; ++j)
     {
-        fA_[j] = (std::uint64_t)uni32(rng);
-        fB_[j] = (std::uint64_t)uni32(rng);
+        fA_[j] = (uint64_t)uni32(rng);
+        fB_[j] = (uint64_t)uni32(rng);
         if (fA_[j] == 0)
             fA_[j] = 1; // Ensure non-zero
     }
@@ -72,16 +71,16 @@ void Hypercube::buildIndex()
     for (int id = 0; id < (int)n; ++id)
     {
         const auto &v = Data[id].values;
-        std::uint64_t vtx = vertexOf(v);
+        uint64_t vtx = vertexOf(v);
         if (denseCube_)
             cubeDense_[vtx].push_back(id);
         else
             cubeSparse_[vtx].push_back(id);
     }
 
-    if (std::getenv("CUBE_DEBUG"))
+    if (getenv("CUBE_DEBUG"))
     {
-        std::cerr << "[CUBE] n=" << n
+        cerr << "[CUBE] n=" << n
                   << " dim=" << Dim
                   << " d'=" << kproj_
                   << " w=" << w_
@@ -97,12 +96,12 @@ void Hypercube::buildIndex()
  * @param j Projection index
  * @return Hash value
  */
-long long Hypercube::hij(const std::vector<float> &v, int j) const
+long long Hypercube::hij(const vector<float> &v, int j) const
 {
     double dot = 0.0;
     for (int d = 0; d < Dim; ++d)
         dot += proj_[j][d] * v[d];
-    return (long long)std::floor((dot + shift_[j]) / w_);
+    return (long long)floor((dot + shift_[j]) / w_);
 }
 
 /**
@@ -114,7 +113,7 @@ long long Hypercube::hij(const std::vector<float> &v, int j) const
 bool Hypercube::fj(long long h, int j) const
 {
     // Random hash function: (a·h + b) mod 2
-    std::uint64_t hval = (std::uint64_t)(h >= 0 ? h : -h);
+    uint64_t hval = (uint64_t)(h >= 0 ? h : -h);
     return ((fA_[j] * hval + fB_[j]) & 1) != 0;
 }
 
@@ -124,9 +123,9 @@ bool Hypercube::fj(long long h, int j) const
  * @param v Input vector
  * @return 64-bit vertex label
  */
-std::uint64_t Hypercube::vertexOf(const std::vector<float> &v) const
+uint64_t Hypercube::vertexOf(const vector<float> &v) const
 {
-    std::uint64_t key = 0;
+    uint64_t key = 0;
     for (int j = 0; j < kproj_; ++j)
     {
         long long hj = hij(v, j);    // Compute LSH hash
@@ -144,27 +143,27 @@ std::uint64_t Hypercube::vertexOf(const std::vector<float> &v) const
  * @param maxHamming Maximum Hamming distance to probe ref 25
  * @return Vector of vertex labels to probe
  */
-std::vector<std::uint64_t>
-Hypercube::probesList(std::uint64_t base, int kproj, int maxProbes, int maxHamming) const
+vector<uint64_t>
+Hypercube::probesList(uint64_t base, int kproj, int maxProbes, int maxHamming) const
 {
-    std::vector<std::uint64_t> out{base};
+    vector<uint64_t> out{base};
     if ((int)out.size() >= maxProbes)
         return out;
 
     // slide 25: Threshold on Hamming distance
-    const int Hmax = std::min(kproj, maxHamming);
+    const int Hmax = min(kproj, maxHamming);
     
     // Generate vertices at increasing Hamming distances: 1, 2, ...
     for (int h = 1; h <= Hmax && (int)out.size() < maxProbes; ++h)
     {
         // Generate all combinations of h bit flips
-        std::vector<int> idx(h);
-        std::iota(idx.begin(), idx.end(), 0);
+        vector<int> idx(h);
+        iota(idx.begin(), idx.end(), 0);
         
         while (true)
         {
             // Flip bits at positions in idx
-            std::uint64_t mask = 0;
+            uint64_t mask = 0;
             for (int i : idx)
                 mask |= (1ULL << i);
             out.push_back(base ^ mask);
@@ -191,9 +190,9 @@ Hypercube::probesList(std::uint64_t base, int kproj, int maxProbes, int maxHammi
  * @param queries Query dataset
  * @param out Output file stream for results
  */
-void Hypercube::search(const std::vector<VectorData> &queries, std::ofstream &out)
+void Hypercube::search(const vector<VectorData> &queries, ofstream &out)
 {
-    using namespace std::chrono;
+    using namespace chrono;
     out << "Hypercube\n\n";
 
     // slide 25: Search parameters
@@ -207,7 +206,7 @@ void Hypercube::search(const std::vector<VectorData> &queries, std::ofstream &ou
     int Q = (int)queries.size();
     
     if (Args.maxQueries > 0)
-        Q = std::min(Q, static_cast<int>(Args.maxQueries));
+        Q = min(Q, static_cast<int>(Args.maxQueries));
 
     for (int qi = 0; qi < Q; ++qi)
     {
@@ -215,20 +214,20 @@ void Hypercube::search(const std::vector<VectorData> &queries, std::ofstream &ou
         auto t0 = high_resolution_clock::now();
 
         // slide 24 Project query to hypercube vertex
-        std::uint64_t base = vertexOf(q);
+        uint64_t base = vertexOf(q);
         
         // slide 24 Check points in same and nearby vertices
         // Generate vertices in increasing Hamming distance
         auto plist = probesList(base, kproj_, probes, maxHam);
         
         // Collect unique candidates from probed vertices
-        std::unordered_set<int> candSet;
-        candSet.reserve(std::min<size_t>((size_t)M, (size_t)4096));
+        unordered_set<int> candSet;
+        candSet.reserve(min<size_t>((size_t)M, (size_t)4096));
         size_t gathered = 0;
         
         for (auto vtx : plist)
         {
-            const std::vector<int> *bucket = nullptr;
+            const vector<int> *bucket = nullptr;
             if (denseCube_)
             {
                 bucket = &cubeDense_[vtx];
@@ -252,9 +251,9 @@ void Hypercube::search(const std::vector<VectorData> &queries, std::ofstream &ou
         }
 
         // Compute actual distances to candidates
-        std::vector<std::pair<double, int>> distApprox;
+        vector<pair<double, int>> distApprox;
         distApprox.reserve(candSet.size());
-        std::vector<int> rlist;
+        vector<int> rlist;
 
         for (int id : candSet)
         {
@@ -266,11 +265,11 @@ void Hypercube::search(const std::vector<VectorData> &queries, std::ofstream &ou
         }
 
         // slide 24 Return closest candidates or range search results
-        int topN = std::min(N, (int)distApprox.size());
+        int topN = min(N, (int)distApprox.size());
         if (topN > 0)
         {
-            std::nth_element(distApprox.begin(), distApprox.begin() + topN, distApprox.end());
-            std::sort(distApprox.begin(), distApprox.begin() + topN);
+            nth_element(distApprox.begin(), distApprox.begin() + topN, distApprox.end());
+            sort(distApprox.begin(), distApprox.begin() + topN);
             distApprox.resize(topN);
         }
         

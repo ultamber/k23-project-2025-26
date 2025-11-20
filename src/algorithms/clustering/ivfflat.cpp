@@ -3,98 +3,7 @@
 #include <limits>
 #include <algorithm>
 #include <numeric>
-#include <chrono>
-#include <iomanip>
-#include <iostream>
 #include <vector>
-
-/**
- * Lloyd's algorithm for k-means clustering ref 31
- * @param P Training vectors
- * @param k Number of clusters
- * @param iters Maximum iterations
- * @param seed Random seed
- */
-void IVFFlat::kmeans(const std::vector<std::vector<float>> &P, int k, int iters, unsigned seed)
-{
-    int N = (int)P.size(), D = (int)P[0].size();
-    std::mt19937_64 rng(seed);
-    std::uniform_int_distribution<int> uni(0, N - 1);
-
-    // Initialize: k distinct random centers ref 31
-    Centroids.assign(k, std::vector<float>(D, 0.0f));
-    std::vector<int> init;
-    init.reserve(k);
-    while ((int)init.size() < k)
-    {
-        int id = uni(rng);
-        if (std::find(init.begin(), init.end(), id) == init.end())
-        {
-            init.push_back(id);
-            Centroids[(int)init.size() - 1] = P[id];
-        }
-    }
-
-    std::vector<int> assign(N, -1);
-    std::vector<int> cnt(k, 0);
-
-    // Lloyd's EM iterations ref 31
-    for (int it = 0; it < iters; ++it)
-    {
-        bool changed = false;
-
-        // Assignment step (Expectation): assign each point to nearest centroid
-        for (int i = 0; i < N; ++i)
-        {
-            int best = -1;
-            double bd = std::numeric_limits<double>::infinity();
-            for (int c = 0; c < k; ++c)
-            {
-                double d = l2(P[i], Centroids[c]);
-                if (d < bd)
-                {
-                    bd = d;
-                    best = c;
-                }
-            }
-            if (assign[i] != best)
-            {
-                assign[i] = best;
-                changed = true;
-            }
-        }
-
-        if (!changed)
-            break; // Converged
-
-        // Update step (Maximization): compute new centroids
-        for (int c = 0; c < k; ++c)
-        {
-            std::fill(Centroids[c].begin(), Centroids[c].end(), 0.0f);
-            cnt[c] = 0;
-        }
-        for (int i = 0; i < N; ++i)
-        {
-            int c = assign[i];
-            ++cnt[c];
-            for (int d = 0; d < D; ++d)
-                Centroids[c][d] += P[i][d];
-        }
-        for (int c = 0; c < k; ++c)
-        {
-            if (cnt[c])
-            {
-                for (int d = 0; d < D; ++d)
-                    Centroids[c][d] /= (float)cnt[c];
-            }
-            else
-            {
-                // Re-seed empty cluster with random point
-                Centroids[c] = P[uni(rng)];
-            }
-        }
-    }
-}
 
 /**
  * Builds the IVF index ref 47
@@ -104,9 +13,6 @@ void IVFFlat::kmeans(const std::vector<std::vector<float>> &P, int k, int iters,
  */
 void IVFFlat::buildIndex()
 {
-    Kclusters = Args.kclusters;   // Number of coarse cells (k in slides)
-    Nprobe = Args.nprobe; // Number of cells to probe (b in slides)
-
     const int N = (int)Data.size();
     if (N == 0 || Kclusters <= 0)
     {
@@ -116,21 +22,21 @@ void IVFFlat::buildIndex()
     }
 
     // slide 47 Run Lloyd's on √n training subset X'
-    int trainN = std::max(Kclusters, (int)std::sqrt((double)N)); trainN = std::min(trainN, N); // Don't exceed dataset size
-    std::mt19937_64 rng(Args.seed);
-    std::vector<int> idx(N);
-    std::iota(idx.begin(), idx.end(), 0);
-    std::shuffle(idx.begin(), idx.end(), rng);
+    int trainN = max(Kclusters, (int)sqrt((double)N)); trainN = min(trainN, N); // Don't exceed dataset size
+    mt19937_64 rng(Args.seed);
+    vector<int> idx(N);
+    iota(idx.begin(), idx.end(), 0);
+    shuffle(idx.begin(), idx.end(), rng);
     idx.resize(trainN);
 
-    std::vector<std::vector<float>> Ptrain;
+    vector<vector<float>> Ptrain;
     Ptrain.reserve(trainN);
     for (int id : idx)
         Ptrain.push_back(Data[id].values);
 
     // slide 47: Learn centroids C = {c₁, ..., cₖ}
-    kmeansWithPP(Ptrain, Kclusters, 25, (unsigned)Args.seed, Centroids, nullptr);
-    
+    kmeansWithPP(Ptrain, Kclusters, (unsigned)Args.seed, Centroids);
+
     // slide 47, Assignment phase - assign ALL points (not just training)
     // to their nearest centroid j* and build inverted lists IL_j
     Lists.assign(Kclusters, {});
@@ -150,7 +56,6 @@ void IVFFlat::buildIndex()
                 best = c;
             }
         }
-        
         // slide 47, Append (id(x), x) to IL_j*(x)
         Lists[best].push_back(i);
     }
@@ -162,19 +67,13 @@ void IVFFlat::buildIndex()
  * 2) Fine search: compute distances to candidates in U = ⋃_j belongs to S IL_j
  * 3) Return R nearest
  */
-void IVFFlat::search(const std::vector<VectorData> &queries, std::ofstream &out)
+void IVFFlat::search(const vector<VectorData> &queries, ofstream &out)
 {
-    using namespace std::chrono;
     out << "IVFFlat\n\n";
 
-    const bool doRange = Args.rangeSearch;
-    const double Rrad = Args.R;
-    const int Nret = Args.N;
-
     int Q = (int)queries.size();
-
     if (Args.maxQueries > 0)
-        Q = std::min(Q, Args.maxQueries);
+        Q = min(Q, Args.maxQueries);
 
     for (int qi = 0; qi < Q; ++qi)
     {
@@ -185,20 +84,20 @@ void IVFFlat::search(const std::vector<VectorData> &queries, std::ofstream &out)
 
         // slide 48 Coarse search - evaluate all cells
         // Compute ||q - c_j||_2 for j = 1, ..., k
-        std::vector<std::pair<double, int>> centroidDists;
+        vector<pair<double, int>> centroidDists;
         centroidDists.reserve(Kclusters);
         for (int c = 0; c < Kclusters; ++c)
             centroidDists.emplace_back(l2(q, Centroids[c]), c);
 
         // Select top b = nprobe_ cells (S ⊂ {1,...,k})
-        int probeCount = std::min(Nprobe, (int)centroidDists.size());
-        std::nth_element(centroidDists.begin(),
+        int probeCount = min(Nprobe, (int)centroidDists.size());
+        nth_element(centroidDists.begin(),
                         centroidDists.begin() + probeCount,
                         centroidDists.end());
-        std::sort(centroidDists.begin(), centroidDists.begin() + probeCount);
+        sort(centroidDists.begin(), centroidDists.begin() + probeCount);
 
         // slide 48 Collect candidates from U = ⋃_j∈S IL_j
-        std::vector<int> candidates;
+        vector<int> candidates;
         size_t totalSize = 0;
         for (int i = 0; i < probeCount; ++i)
             totalSize += Lists[centroidDists[i].second].size();
@@ -212,20 +111,20 @@ void IVFFlat::search(const std::vector<VectorData> &queries, std::ofstream &out)
         }
 
         // slide 48 Compute d(q,x) = ||q - x||_2 for all x ∈ U
-        std::vector<std::pair<double, int>> distApprox;
+        vector<pair<double, int>> distApprox;
         distApprox.reserve(candidates.size());
-        std::vector<int> rlist; // Range search results
+        vector<int> rlist; // Range search results
 
         for (int id : candidates)
         {
             double d = l2(q, Data[id].values);
             distApprox.emplace_back(d, id);
-            if (doRange && d <= Rrad)
+            if (Args.rangeSearch && d <= Args.R)
                 rlist.push_back(id);
         }
 
         // slide 48, Return R nearest points from U
-        int keepApprox = std::min(Nret, (int)distApprox.size());
+        int keepApprox = std::min(Args.N, (int)distApprox.size());
         if (keepApprox > 0)
         {
             std::nth_element(distApprox.begin(),
@@ -251,7 +150,7 @@ double IVFFlat::silhouetteScore()
     if (N == 0 || k <= 1)
         return 0.0;
 
-    std::vector<int> label(N, -1);
+    vector<int> label(N, -1);
     for (int c = 0; c < k; ++c)
         for (int id : Lists[c])
             label[id] = c;
@@ -314,20 +213,20 @@ double IVFFlat::silhouetteScore()
 /**
  * Per-cluster silhouette averages ref 45
  */
-std::vector<double> IVFFlat::silhouettePerCluster()
+vector<double> IVFFlat::silhouettePerCluster()
 {
     int N = Data.size();
     int k = Centroids.size();
     if (N == 0 || k <= 1)
         return {};
 
-    std::vector<int> label(N, -1);
+    vector<int> label(N, -1);
     for (int c = 0; c < k; ++c)
         for (int id : Lists[c])
             label[id] = c;
 
-    std::vector<double> clusterSum(k, 0.0);
-    std::vector<int> clusterCount(k, 0);
+    vector<double> clusterSum(k, 0.0);
+    vector<int> clusterCount(k, 0);
 
     for (int i = 0; i < N; ++i)
     {
@@ -375,7 +274,7 @@ std::vector<double> IVFFlat::silhouettePerCluster()
         ++clusterCount[ci];
     }
 
-    std::vector<double> clusterAvg(k, 0.0);
+    vector<double> clusterAvg(k, 0.0);
     for (int c = 0; c < k; ++c)
         if (clusterCount[c] > 0)
             clusterAvg[c] = clusterSum[c] / clusterCount[c];
@@ -385,385 +284,54 @@ std::vector<double> IVFFlat::silhouettePerCluster()
     return clusterAvg;
 }
 
-void IVFFlat::kmeanspp(const std::vector<std::vector<float>> &P, int k, 
-                  std::vector<std::vector<float>> &centroids, unsigned seed)
-    {
-        int N = (int)P.size();
+/**
+ * Lloyd's algorithm with k-means++ initialization
+ * Improved version of existing kmeans function
+ */
+void IVFFlat::kmeansWithPP(
+    const vector<vector<float>> &P,
+    int k,
+    unsigned seed,
+    vector<vector<float>> &centroids
+) {
+    int n = P.size();
+    if (n == 0 || k <= 0) return;
 
+    centroids.clear();
+    centroids.reserve(k);
 
-        if (N == 0 || k <= 0) {
-            centroids.clear();
-            return;
+    mt19937 gen(seed);
+    uniform_int_distribution<> dis(0, n - 1);
+
+    // 1. Pick the first centroid randomly
+    centroids.push_back(P[dis(gen)]);
+
+    vector<float> dist2(n, numeric_limits<float>::max());
+
+    for (int c = 1; c < k; ++c) {
+        // 2. Compute squared distances to the nearest centroid
+        for (int i = 0; i < n; ++i) {
+            float d = l2(P[i], centroids.back());
+            if (d < dist2[i]) dist2[i] = d;
         }
 
-        std::mt19937_64 rng(seed);
-        std::uniform_int_distribution<int> uni(0, N - 1);
-        std::uniform_real_distribution<double> unif(0.0, 1.0);
+        // 3. Pick next centroid randomly weighted by distance squared
+        float sum = 0.0f;
+        for (float d : dist2) sum += d;
 
-        centroids.clear();
-        centroids.reserve(k);
+        uniform_real_distribution<float> u(0.0f, sum);
+        float r = u(gen);
 
-        // Choose first centroid uniformly at random
-        int firstIdx = uni(rng);
-        centroids.push_back(P[firstIdx]);
-
-        std::vector<double> minDist(N, std::numeric_limits<double>::infinity());
-
-        // Choose remaining k-1 centroids
-        for (int t = 1; t < k; ++t)
-        {
-            // Update D(i) = min distance to any chosen centroid
-            const auto &lastCentroid = centroids.back();
-            for (int i = 0; i < N; ++i)
-            {
-                double d = l2(P[i], lastCentroid);
-                if (d < minDist[i])
-                    minDist[i] = d;
+        float cumulative = 0.0f;
+        int nextIndex = 0;
+        for (int i = 0; i < n; ++i) {
+            cumulative += dist2[i];
+            if (cumulative >= r) {
+                nextIndex = i;
+                break;
             }
-
-            // Normalize D(i) to avoid overflow ref 42)
-            double maxD = *std::max_element(minDist.begin(), minDist.end());
-            if (maxD <= 0.0) {
-                // All points are centroids, choose random
-                centroids.push_back(P[uni(rng)]);
-                continue;
-            }
-
-            // Build partial sums: P(r) = Σ(i=1 to r) D(i)^2
-            std::vector<double> partialSums(N, 0.0);
-            partialSums[0] = (minDist[0] / maxD) * (minDist[0] / maxD);
-            for (int i = 1; i < N; ++i)
-            {
-                double normDist = minDist[i] / maxD;
-                partialSums[i] = partialSums[i-1] + normDist * normDist;
-            }
-
-            // Choose r with probability ∝ D(r)^2 ref 42
-            // Pick random x ∈ [0, P(N-1)] and find r where P(r-1) < x ≤ P(r)
-            double x = unif(rng) * partialSums[N-1];
-
-            // Binary search for r
-            int r = std::lower_bound(partialSums.begin(), partialSums.end(), x) 
-                    - partialSums.begin();
-            r = std::min(r, N - 1);
-
-            centroids.push_back(P[r]);
         }
+
+        centroids.push_back(P[nextIndex]);
     }
-
-    /**
-     * Lloyd's algorithm with k-means++ initialization
-     * Improved version of existing kmeans function
-     */
-    void IVFFlat::kmeansWithPP(const std::vector<std::vector<float>> &P, int k, 
-                      int iters, unsigned seed,
-                      std::vector<std::vector<float>> &centroids,
-                      std::vector<int> *outAssign)
-    {
-        int N = (int)P.size();
-        int D = (int)P[0].size();
-
-        if (N == 0 || k <= 0) {
-            centroids.clear();
-            if (outAssign) outAssign->clear();
-            return;
-        }
-
-        std::mt19937_64 rng(seed);
-        std::uniform_int_distribution<int> uni(0, N - 1);
-
-        // Use k-means++ for initialization instead of random
-        kmeanspp(P, k, centroids, seed);
-
-        std::vector<int> assign(N, -1);
-        std::vector<int> cnt(k, 0);
-
-        // Lloyd's iterations
-        for (int it = 0; it < iters; ++it)
-        {
-            bool changed = false;
-
-            // Assignment step
-            for (int i = 0; i < N; ++i)
-            {
-                int best = -1;
-                double bd = std::numeric_limits<double>::infinity();
-                for (int c = 0; c < k; ++c)
-                {
-                    double d = l2(P[i], centroids[c]);
-                    if (d < bd)
-                    {
-                        bd = d;
-                        best = c;
-                    }
-                }
-                if (assign[i] != best)
-                {
-                    assign[i] = best;
-                    changed = true;
-                }
-            }
-
-            if (!changed) break;
-
-            // Update step
-            for (int c = 0; c < k; ++c)
-            {
-                std::fill(centroids[c].begin(), centroids[c].end(), 0.0f);
-                cnt[c] = 0;
-            }
-            for (int i = 0; i < N; ++i)
-            {
-                int c = assign[i];
-                ++cnt[c];
-                for (int d = 0; d < D; ++d)
-                    centroids[c][d] += P[i][d];
-            }
-            for (int c = 0; c < k; ++c)
-            {
-                if (cnt[c])
-                {
-                    for (int d = 0; d < D; ++d)
-                        centroids[c][d] /= (float)cnt[c];
-                }
-                else
-                {
-                    // Re-seed empty cluster
-                    centroids[c] = P[uni(rng)];
-                }
-            }
-        }
-
-        if (outAssign)
-            *outAssign = std::move(assign);
-    }
-
-    double IVFFlat::computeSilhouetteForK(int k, unsigned seed)
-    {
-        if (k <= 1 || k >= (int)Data.size())
-            return -1.0; // Invalid k
-
-        // Build temporary clustering with k clusters
-        std::vector<std::vector<float>> P;
-        P.reserve(Data.size());
-        for (const auto &v : Data)
-            P.push_back(v.values);
-
-        std::vector<std::vector<float>> tempCentroids;
-        std::vector<int> assign;
-        kmeansWithPP(P, k, 25, seed, tempCentroids, &assign);
-
-        // Build temporary inverted lists
-        std::vector<std::vector<int>> tempLists(k);
-        for (int i = 0; i < (int)assign.size(); ++i)
-        {
-            if (assign[i] >= 0 && assign[i] < k)
-                tempLists[assign[i]].push_back(i);
-        }
-
-        // Compute silhouette score ref 44
-        double total = 0.0;
-        int validPoints = 0;
-        int N = (int)Data.size();
-
-        for (int i = 0; i < N; ++i)
-        {
-            int ci = assign[i];
-            if (ci < 0 || ci >= k) continue;
-
-            const auto &xi = Data[i].values;
-
-            // a(i): average distance within same cluster
-            double a_i = 0.0;
-            int sameCount = 0;
-            for (int id : tempLists[ci])
-            {
-                if (id == i) continue;
-                a_i += l2(xi, Data[id].values);
-                ++sameCount;
-            }
-            if (sameCount > 0)
-                a_i /= sameCount;
-            else
-                a_i = 0.0;
-
-            // b(i): average distance to next best cluster
-            double b_i = std::numeric_limits<double>::infinity();
-            for (int c = 0; c < k; ++c)
-            {
-                if (c == ci || tempLists[c].empty())
-                    continue;
-                double sum = 0.0;
-                for (int id : tempLists[c])
-                    sum += l2(xi, Data[id].values);
-                double avg = sum / tempLists[c].size();
-                if (avg < b_i)
-                    b_i = avg;
-            }
-
-            // s(i) = (b(i) - a(i)) / max{a(i), b(i)}
-            double s_i = 0.0;
-            if (a_i < b_i)
-                s_i = 1.0 - (a_i / b_i);
-            else if (a_i > b_i)
-                s_i = (b_i / a_i) - 1.0;
-            else
-                s_i = 0.0;
-
-            total += s_i;
-            ++validPoints;
-        }
-
-        return (validPoints > 0) ? total / validPoints : 0.0;
-    }
-
-    int IVFFlat::findOptimalK(int kmin, int kmax, unsigned seed, int step)
-    {
-        if (kmin >= kmax || kmin < 2)
-        {
-            std::cerr << "Invalid k range: [" << kmin << ", " << kmax << "]\n";
-            return kmin;
-        }
-
-        std::cout << "\n=== Finding Optimal K using Silhouette Method ===\n";
-        std::cout << "Testing k in range [" << kmin << ", " << kmax << "] with step " << step << "\n\n";
-
-        int bestK = kmin;
-        double bestScore = -2.0; // Silhouette scores are in [-1, 1]
-
-        for (int k = kmin; k <= kmax; k += step)
-        {
-            double score = computeSilhouetteForK(k, seed);
-
-            std::cout << "k = " << k 
-                      << " | Silhouette = " << std::fixed << std::setprecision(4) << score;
-
-            if (score > bestScore)
-            {
-                bestScore = score;
-                bestK = k;
-                std::cout << " <- NEW BEST";
-            }
-            std::cout << "\n";
-        }
-
-        std::cout << "\n=== Optimal K = " << bestK 
-                  << " with Silhouette = " << bestScore << " ===\n\n";
-
-        return bestK;
-    }
-
-    int IVFFlat::findOptimalKEnhanced(int kmin, int kmax, unsigned seed, int step )
-    {
-        std::cout << "\n=== Enhanced K Selection (Overall + Per-Cluster) ===\n";
-
-        struct KScore {
-            int k;
-            double overallScore;
-            double clusterVariance; // Variance of per-cluster scores
-            double combinedScore;   // Overall - penalty*variance
-        };
-
-        std::vector<KScore> scores;
-
-        for (int k = kmin; k <= kmax; k += step)
-        {
-            // Build clustering
-            std::vector<std::vector<float>> P;
-            P.reserve(Data.size());
-            for (const auto &v : Data)
-                P.push_back(v.values);
-
-            std::vector<std::vector<float>> tempCentroids;
-            std::vector<int> assign;
-            kmeansWithPP(P, k, 25, seed, tempCentroids, &assign);
-
-            std::vector<std::vector<int>> tempLists(k);
-            for (int i = 0; i < (int)assign.size(); ++i)
-                if (assign[i] >= 0 && assign[i] < k)
-                    tempLists[assign[i]].push_back(i);
-
-            // Compute per-cluster silhouettes
-            std::vector<double> clusterScores;
-            for (int c = 0; c < k; ++c)
-            {
-                if (tempLists[c].empty()) continue;
-
-                double clusterSum = 0.0;
-                int clusterCount = 0;
-
-                for (int i : tempLists[c])
-                {
-                    const auto &xi = Data[i].values;
-
-                    double a_i = 0.0;
-                    int sameCount = 0;
-                    for (int id : tempLists[c])
-                    {
-                        if (id == i) continue;
-                        a_i += l2(xi, Data[id].values);
-                        ++sameCount;
-                    }
-                    if (sameCount > 0) a_i /= sameCount;
-
-                    double b_i = std::numeric_limits<double>::infinity();
-                    for (int c2 = 0; c2 < k; ++c2)
-                    {
-                        if (c2 == c || tempLists[c2].empty()) continue;
-                        double sum = 0.0;
-                        for (int id : tempLists[c2])
-                            sum += l2(xi, Data[id].values);
-                        double avg = sum / tempLists[c2].size();
-                        if (avg < b_i) b_i = avg;
-                    }
-
-                    double s_i = 0.0;
-                    if (a_i < b_i)
-                        s_i = 1.0 - (a_i / b_i);
-                    else if (a_i > b_i)
-                        s_i = (b_i / a_i) - 1.0;
-
-                    clusterSum += s_i;
-                    ++clusterCount;
-                }
-
-                if (clusterCount > 0)
-                    clusterScores.push_back(clusterSum / clusterCount);
-            }
-
-            // Overall score
-            double overall = 0.0;
-            for (double s : clusterScores) overall += s;
-            if (!clusterScores.empty()) overall /= clusterScores.size();
-
-            // Variance of cluster scores (lower is better)
-            double variance = 0.0;
-            if (!clusterScores.empty())
-            {
-                for (double s : clusterScores)
-                    variance += (s - overall) * (s - overall);
-                variance /= clusterScores.size();
-            }
-
-            // Combined score: penalize high variance
-            double combined = overall - 0.2 * variance;
-
-            scores.push_back({k, overall, variance, combined});
-
-            std::cout << "k = " << k 
-                      << " | Overall = " << std::fixed << std::setprecision(4) << overall
-                      << " | Variance = " << variance
-                      << " | Combined = " << combined << "\n";
-        }
-
-        // Find best combined score
-        auto best = std::max_element(scores.begin(), scores.end(),
-            [](const KScore &a, const KScore &b) {
-                return a.combinedScore < b.combinedScore;
-            });
-
-        std::cout << "\n=== Optimal K = " << best->k 
-                  << " (Combined Score = " << best->combinedScore << ") ===\n\n";
-
-        return best->k;
 }

@@ -8,23 +8,23 @@
 class LSH : public SearchMethod
 {
 public:
-    explicit LSH(const Arguments &a, const int &b, const std::vector<VectorData> &c): SearchMethod(a, b, c){}
+    explicit LSH(const Arguments &a, const int &b, const vector<VectorData> &c): SearchMethod(a, b, c){}
     void buildIndex() override;
-    void search(const std::vector<VectorData> &queries, std::ofstream &out) override;
+    void search(const vector<VectorData> &queries, std::ofstream &out) override;
 
 private:
-    const std::uint64_t MOD_M = 4294967291ULL; // 2^32 - 5, a large prime
+    const uint64_t MOD_M = 4294967291ULL; // 2^32 - 5, a large prime
     // --- LSH parameters ---
     size_t tableSize_ = 0;                                                        // TableSize = n / 4
-    std::vector<std::vector<long long>> r_;                                       // random coefficients
-    std::vector<std::vector<std::vector<std::pair<int, std::uint64_t>>>> tables_; // L x TableSize buckets
+    vector<vector<long long>> r_;                                       // random coefficients
+    vector<vector<vector<pair<int, uint64_t>>>> tables_; // L x TableSize buckets
     // L × k random projection vectors
-    std::vector<std::vector<std::vector<float>>> a_; // [L][k][dim]
+    vector<vector<vector<float>>> a_; // [L][k][dim]
     // L × k random offsets t in [0,w)
-    std::vector<std::vector<float>> t_; // [L][k]
+    vector<vector<float>> t_; // [L][k]
     double w_ = 4.0;
-    // static constexpr std::uint64_t MOD_M = (1ull << 32) - 5;
-    std::uint64_t keyFor(const std::vector<float> &v, int li) const;
+    // static constexpr uint64_t MOD_M = (1ull << 32) - 5;
+    uint64_t keyFor(const vector<float> &v, int li) const;
 
     // --- diagnostics (only active when LSH_DEBUG=1) ---
     mutable long long min_h_seen_ = LLONG_MAX;
@@ -38,20 +38,20 @@ private:
         long long r = a % m;
         return (r < 0) ? r + m : r;
     }
-    inline static std::uint64_t mod_u64(std::uint64_t a, std::uint64_t m)
+    inline static uint64_t mod_u64(uint64_t a, uint64_t m)
     {
         return (m == 0) ? 0 : (a % m);
     }
 
     // Compute base LSH function h_j(p)
-    inline long long hij(const std::vector<float> &v, int li, int j) const
+    inline long long hij(const vector<float> &v, int li, int j) const
     {
         double dot = 0.0;
         for (int d = 0; d < Dim; ++d)
             dot += a_[li][j][d] * v[d];
-        return (long long)std::floor((dot + t_[li][j]) / w_);
+        return (long long)floor((dot + t_[li][j]) / w_);
     }
 
     // Compute amplified ID(p) = Σ r_j h_j(p) mod M  ref 21
-    std::uint64_t computeID(const std::vector<float> &v, int li) const;
+    uint64_t computeID(const vector<float> &v, int li) const;
 };

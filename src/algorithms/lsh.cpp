@@ -19,18 +19,18 @@ void LSH::buildIndex()
     int k = Args.k > 0 ? Args.k : 4;
 
     // TableSize heuristic ref 20): n/4
-    tableSize_ = std::max<size_t>(1, Data.size() / 4);
+    tableSize_ = max<size_t>(1, Data.size() / 4);
 
     // Random number generators ref 18-19)
-    std::mt19937_64 rng(Args.seed);
-    std::normal_distribution<double> normal(0.0, 1.0);                        // For random projections a
-    std::uniform_real_distribution<float> unif(0.0f, w_);                     // For random shifts t
-    std::uniform_int_distribution<uint32_t> distR(1u, (uint32_t)(MOD_M - 1)); // For hash combination r
+    mt19937_64 rng(Args.seed);
+    normal_distribution<double> normal(0.0, 1.0);                        // For random projections a
+    uniform_real_distribution<float> unif(0.0f, w_);                     // For random shifts t
+    uniform_int_distribution<uint32_t> distR(1u, (uint32_t)(MOD_M - 1)); // For hash combination r
 
     // Allocate hash function parameters
-    a_.assign(L, std::vector<std::vector<float>>(k, std::vector<float>(Dim))); // Random projection vectors
-    t_.assign(L, std::vector<float>(k, 0.0f));                                  // Random shifts
-    r_.assign(L, std::vector<long long>(k));                                    // Integer coefficients for hash combination
+    a_.assign(L, vector<vector<float>>(k, vector<float>(Dim))); // Random projection vectors
+    t_.assign(L, vector<float>(k, 0.0f));                                  // Random shifts
+    r_.assign(L, vector<long long>(k));                                    // Integer coefficients for hash combination
 
     // Generate random projections, shifts, and integer coefficients ref 18
     for (int li = 0; li < L; ++li)
@@ -50,7 +50,7 @@ void LSH::buildIndex()
     }
 
     // Allocate L hash tables with TableSize buckets each
-    tables_.assign(L, std::vector<std::vector<std::pair<int, std::uint64_t>>>(tableSize_));
+    tables_.assign(L, vector<vector<pair<int, uint64_t>>>(tableSize_));
 
     // Insert all data points into hash tables
     for (int id = 0; id < (int)Data.size(); ++id)
@@ -60,11 +60,11 @@ void LSH::buildIndex()
         {
             // Compute ID(p) using hash function 
             // ref slides 18, 20-21
-            std::uint64_t IDp = computeID(p, li);
+            uint64_t IDp = computeID(p, li);
 
             // Compute bucket index g(p) = ID(p) mod TableSize 
             // ref slide 20
-            std::uint64_t g = IDp % tableSize_;
+            uint64_t g = IDp % tableSize_;
 
             // Store both point id and its ID for filtering 
             // ref slide 21
@@ -72,9 +72,9 @@ void LSH::buildIndex()
         }
     }
 
-    if (std::getenv("LSH_DEBUG"))
+    if (getenv("LSH_DEBUG"))
     {
-        std::cerr << "[LSH-DIAG] w=" << w_
+        cerr << "[LSH-DIAG] w=" << w_
                   << " L=" << L << " k=" << k
                   << " TableSize=" << tableSize_
                   << " min_h_seen=" << (min_h_seen_ == LLONG_MAX ? 0 : min_h_seen_)
@@ -89,9 +89,9 @@ void LSH::buildIndex()
  * @param li Index of the hash table
  * @return 64-bit ID value
  */
-std::uint64_t LSH::computeID(const std::vector<float> &v, int li) const
+uint64_t LSH::computeID(const vector<float> &v, int li) const
 {
-    std::uint64_t ID = 0;
+    uint64_t ID = 0;
 
     // Combine k hash functions 
     // ref slide 20
@@ -105,11 +105,11 @@ std::uint64_t LSH::computeID(const std::vector<float> &v, int li) const
 
         // Apply LSH hash function: h(p) = floor((a·p + t)/w)
         // slide 18
-        long long hj = (long long)std::floor((dot + t_[li][j]) / w_);
+        long long hj = (long long)floor((dot + t_[li][j]) / w_);
 
         // Combine using random coefficients: ID = Σ r_ih_i(p) mod M 
         // slide 20
-        ID = (ID + (std::uint64_t)(r_[li][j] * hj)) % MOD_M;
+        ID = (ID + (uint64_t)(r_[li][j] * hj)) % MOD_M;
 
         // Update diagnostic counters
         if (hj < min_h_seen_)
@@ -127,9 +127,9 @@ std::uint64_t LSH::computeID(const std::vector<float> &v, int li) const
  * @param li Index of the hash table
  * @return 64-bit hash key (bucket index)
  */
-std::uint64_t LSH::keyFor(const std::vector<float> &v, int li) const
+uint64_t LSH::keyFor(const vector<float> &v, int li) const
 {
-    std::uint64_t IDv = computeID(v, li);
+    uint64_t IDv = computeID(v, li);
     return IDv % tableSize_; // g(p) = ID(p) mod TableSize ref 20
 }
 
@@ -138,17 +138,17 @@ std::uint64_t LSH::keyFor(const std::vector<float> &v, int li) const
  * @param queries Query dataset
  * @param out Output file stream for results
  */
-void LSH::search(const std::vector<VectorData> &queries, std::ofstream &out)
+void LSH::search(const vector<VectorData> &queries, ofstream &out)
 {
 
-    using namespace std::chrono;
+    using namespace chrono;
     out << "LSH\n\n";
 
     int qCount = (int)queries.size();
 
     // Optional query limit
     if (Args.maxQueries > 0)
-        qCount = std::min(qCount, Args.maxQueries);
+        qCount = min(qCount, Args.maxQueries);
 
     for (int qi = 0; qi < qCount; ++qi)
     {
@@ -156,7 +156,7 @@ void LSH::search(const std::vector<VectorData> &queries, std::ofstream &out)
         auto t0 = high_resolution_clock::now();
 
         // multi probe lsh: collect candidates from multiple buckets
-        std::vector<int> candidates;
+        vector<int> candidates;
         size_t examined = 0;
 
         // Hard cap on candidates to examine 
@@ -168,14 +168,14 @@ void LSH::search(const std::vector<VectorData> &queries, std::ofstream &out)
         {
             // compute query's hash value
             //  ref slide 20-21
-            std::uint64_t IDq = computeID(q, li);
-            std::uint64_t gq = IDq % tableSize_;
+            uint64_t IDq = computeID(q, li);
+            uint64_t gq = IDq % tableSize_;
 
             // multi-probes: check main bucket + neighboring buckets (delta = -2 to +2)
             // significantly improves recall by finding near-collisions
             for (int delta = -2; delta <= 2; ++delta)
             {
-                std::uint64_t gq2 = (gq + delta + tableSize_) % tableSize_;
+                uint64_t gq2 = (gq + delta + tableSize_) % tableSize_;
                 const auto &bucket = tables_[li][gq2];
 
                 for (const auto &pr : bucket)
@@ -204,12 +204,12 @@ void LSH::search(const std::vector<VectorData> &queries, std::ofstream &out)
         }
 
         // Deduplicate candidates 
-        std::sort(candidates.begin(), candidates.end());
-        candidates.erase(std::unique(candidates.begin(), candidates.end()), candidates.end());
+        sort(candidates.begin(), candidates.end());
+        candidates.erase(unique(candidates.begin(), candidates.end()), candidates.end());
 
         // Compute actual distances to candidates
-        std::vector<std::pair<double, int>> distApprox;
-        std::vector<int> rlist; // Range search results
+        vector<pair<double, int>> distApprox;
+        vector<int> rlist; // Range search results
         distApprox.reserve(candidates.size());
 
         for (int id : candidates)
@@ -225,11 +225,11 @@ void LSH::search(const std::vector<VectorData> &queries, std::ofstream &out)
 
         // Find top N nearest neighbors 
         // ref slide 13
-        int N = std::min(Args.N, (int)distApprox.size());
+        int N = min(Args.N, (int)distApprox.size());
         if (N > 0)
         {
-            std::nth_element(distApprox.begin(), distApprox.begin() + N, distApprox.end());
-            std::sort(distApprox.begin(), distApprox.begin() + N);
+            nth_element(distApprox.begin(), distApprox.begin() + N, distApprox.end());
+            sort(distApprox.begin(), distApprox.begin() + N);
         }
 
         double tApprox = duration<double>(high_resolution_clock::now() - t0).count();

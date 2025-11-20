@@ -1,21 +1,17 @@
 #include "../../../include/algorithms/clustering/ivfpq.hpp"
+#include <iostream>
 #include <random>
 #include <limits>
 #include <algorithm>
 #include <numeric>
-#include <chrono>
-#include <iomanip>
-#include <unordered_set>
-#include <iostream>
-#include <vector>
 
 /**
  * Computes residual vectors r(x) = x - c(x) for all points ref 49
  */
-void IVFPQ::makeResiduals(const std::vector<int> &assign, std::vector<std::vector<float>> &residuals)
+void IVFPQ::makeResiduals(const vector<int> &assign, vector<vector<float>> &residuals)
 {
     int N = (int)Data.size(), D = Dim;
-    residuals.assign(N, std::vector<float>(D, 0.0f));
+    residuals.assign(N, vector<float>(D, 0.0f));
     for (int i = 0; i < N; ++i)
     {
         int c = assign[i];
@@ -28,34 +24,31 @@ void IVFPQ::makeResiduals(const std::vector<int> &assign, std::vector<std::vecto
  * Trains Product Quantizer on residuals ref 49
  * Split residual into M subspaces, run k-means on each with s=2^nbits centroids
  */
-void IVFPQ::trainPQ(const std::vector<std::vector<float>> &R)
+void IVFPQ::trainPQ(const vector<vector<float>> &R)
 {
-        int D = Dim, M = M_;
+    // slide 49Split r(x) into M parts
+    subdim_.assign(Args.M, Dim / Args.M);
+    for (int i = 0; i < Dim % Args.M; ++i)
+        ++subdim_[i]; // Distribute remainder
 
-        // slide 49Split r(x) into M parts
-        subdim_.assign(M, D / M);
-        for (int i = 0; i < D % M; ++i)
-            ++subdim_[i]; // Distribute remainder
-
-    codebooks_.assign(M, {});
-    unsigned seed = (unsigned)Args.seed;
+    codebooks_.assign(Args.M, {});
 
     int offset = 0;
-    for (int m = 0; m < M; ++m)
+    for (int m = 0; m < Args.M; ++m)
     {
         int sd = subdim_[m];
 
         // Extract subspace m from all residuals
-        std::vector<std::vector<float>> subspace;
+        vector<vector<float>> subspace;
         subspace.reserve(R.size());
         for (const auto &r : R)
             subspace.emplace_back(r.begin() + offset, r.begin() + offset + sd);
 
         // slide 49 Lloyd's creates clustering with s = 2^nbits centroids
-        std::vector<std::vector<float>> cb;
+        vector<vector<float>> cb;
 
-        kmeansWithPP(subspace, Ks_, 20, seed + m, cb, nullptr);
-        kmeansWithPP(subspace, Kclusters, 20, (unsigned)Args.seed + m, Centroids, nullptr);
+        kmeansWithPP(subspace, Ks_, (unsigned)Args.seed + m, cb);
+        kmeansWithPP(subspace, Kclusters, (unsigned)Args.seed + m, Centroids);
         codebooks_[m] = std::move(cb);
 
         offset += sd;
@@ -65,13 +58,13 @@ void IVFPQ::trainPQ(const std::vector<std::vector<float>> &R)
 /**
  * Encodes all residuals using trained PQ ref 49
  */
-void IVFPQ::encodeAll(const std::vector<std::vector<float>> &R)
+void IVFPQ::encodeAll(const vector<vector<float>> &R)
 {
-    int N = (int)R.size(), M = M_;
-    codes_.assign(N, std::vector<uint8_t>(M, 0));
+    int N = (int)R.size();
+    codes_.assign(N, vector<uint8_t>(Args.M, 0));
 
     int offset = 0;
-    for (int m = 0; m < M; ++m)
+    for (int m = 0; m < Args.M; ++m)
     {
         int sd = subdim_[m];
 
@@ -108,12 +101,7 @@ void IVFPQ::encodeAll(const std::vector<std::vector<float>> &R)
  */
 void IVFPQ::buildIndex()
 {
-    Kclusters = Args.kclusters;         // Number of coarse cells (k in slides)
-    Nprobe = Args.nprobe;       // Number of cells to probe (b in slides)
-    M_ = Args.Msubvectors;       // Number of subquantizers (M in slides)
-    Ks_ = 1 << Args.nbits;       // Codebook size per subquantizer (s = 2^nbits in slides)
-
-    const int N = (int)Data.size();
+    int N = (int)Data.size();
     if (N == 0)
     {
         Centroids.clear();
@@ -126,21 +114,20 @@ void IVFPQ::buildIndex()
     trainN = std::min(trainN, N);
 
     std::mt19937_64 rng(Args.seed);
-    std::vector<int> idx(N);
+    vector<int> idx(N);
     std::iota(idx.begin(), idx.end(), 0);
     std::shuffle(idx.begin(), idx.end(), rng);
     idx.resize(trainN);
 
-    std::vector<std::vector<float>> Ptrain;
-    Ptrain.reserve(trainN);
+    vector<vector<float>> Ptrain;
     for (int id : idx)
         Ptrain.push_back(Data[id].values);
 
-    kmeansWithPP(Ptrain, Kclusters, 40, (unsigned)Args.seed, Centroids, nullptr);
+    kmeansWithPP(Ptrain, Kclusters, (unsigned)Args.seed, Centroids);
 
     // slide 49, Assign ALL points to nearest centroid
     Lists.assign(Kclusters, {});
-    std::vector<int> fullAssign(N, -1);
+    vector<int> fullAssign(N, -1);
     for (int i = 0; i < N; ++i)
     {
         const auto &x = Data[i].values;
@@ -160,7 +147,7 @@ void IVFPQ::buildIndex()
     }
 
     // slide 49,  Compute residual vectors r(x) = x - c(x)
-    std::vector<std::vector<float>> R;
+    vector<vector<float>> R;
     makeResiduals(fullAssign, R);
 
     // slide 49, Train product quantizer on residuals
@@ -174,7 +161,7 @@ void IVFPQ::buildIndex()
 /**
  * Performs IVFPQ search ref 50
  */
-void IVFPQ::search(const std::vector<VectorData> &queries, std::ofstream &out)
+void IVFPQ::search(const vector<VectorData> &queries, std::ofstream &out)
 {
     using namespace std::chrono;
     out << "IVFPQ\n\n";
@@ -196,7 +183,7 @@ void IVFPQ::search(const std::vector<VectorData> &queries, std::ofstream &out)
         auto t0 = high_resolution_clock::now();
 
         // slide 50Score centroids - compute ||q - c_j||_2
-        std::vector<std::pair<double, int>> centroidDists;
+        vector<std::pair<double, int>> centroidDists;
         centroidDists.reserve(Kclusters);
         for (int c = 0; c < Kclusters; ++c)
         {
@@ -216,8 +203,8 @@ void IVFPQ::search(const std::vector<VectorData> &queries, std::ofstream &out)
                         centroidDists.end());
         std::sort(centroidDists.begin(), centroidDists.begin() + probeCount);
 
-        std::vector<std::pair<double, int>> adcCandidates; // (adc_distance_squared, id)
-        std::vector<int> rlist;
+        vector<std::pair<double, int>> adcCandidates; // (adc_distance_squared, id)
+        vector<int> rlist;
 
         // slide 50 For each selected c_j
         for (int pi = 0; pi < probeCount; ++pi)
@@ -225,15 +212,15 @@ void IVFPQ::search(const std::vector<VectorData> &queries, std::ofstream &out)
             int cid = centroidDists[pi].second;
 
             // Compute residual: r(q) = q - c_j
-            std::vector<float> rq(Dim);
+            vector<float> rq(Dim);
             for (int d = 0; d < Dim; ++d)
                 rq[d] = q[d] - Centroids[cid][d];
 
             // Split r(q) = [r_1(q), ..., r_M(q)]
             // Define LUT[i][h] = ||r_i(q) - c_{i,h}||_2 ref 50)
-            std::vector<std::vector<double>> LUT(M_, std::vector<double>(Ks_, 0.0));
+            vector<vector<double>> LUT(Args.M, vector<double>(Ks_, 0.0));
             int offset = 0;
-            for (int m = 0; m < M_; ++m)
+            for (int m = 0; m < Args.M; ++m)
             {
                 int sd = subdim_[m];
                 for (int k = 0; k < Ks_; ++k)
@@ -254,9 +241,9 @@ void IVFPQ::search(const std::vector<VectorData> &queries, std::ofstream &out)
             for (int id : Lists[cid])
             {
                 double adc_sqr = 0.0;
-                for (int m = 0; m < M_; ++m)
+                for (int m = 0; m < Args.M; ++m)
                     adc_sqr += LUT[m][codes_[id][m]];
-                
+
                 adcCandidates.emplace_back(adc_sqr, id);
 
                 // Range search in PQ space (optional)
@@ -270,7 +257,7 @@ void IVFPQ::search(const std::vector<VectorData> &queries, std::ofstream &out)
         }
 
         // Keep top T candidates for re-ranking
-        std::vector<std::pair<double, int>> reranked;
+        vector<std::pair<double, int>> reranked;
         if (!adcCandidates.empty())
         {
             int T = std::max(Nret, rerankTop);
@@ -278,7 +265,7 @@ void IVFPQ::search(const std::vector<VectorData> &queries, std::ofstream &out)
             std::nth_element(adcCandidates.begin(),
                            adcCandidates.begin() + T,
                            adcCandidates.end());
-            
+
             // Re-rank top T with exact distances
             reranked.reserve(T);
             for (int i = 0; i < T; ++i)
