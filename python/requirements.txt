@@ -1,0 +1,19 @@
+# Neural LSH - Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# Core dependencies
+numpy>=1.21.0
+torch>=2.0.0
+scikit-learn>=1.0.0
+
+# Graph partitioning
+kahip>=3.14
+
+# Optional but recommended
+matplotlib>=3.5.0        # For visualizations
+pandas>=1.3.0            # For data analysis
+tqdm>=4.62.0             # Progress bars
+
+# Development
+pytest>=7.0.0            # Testing
+black>=22.0.0            # Code formatting

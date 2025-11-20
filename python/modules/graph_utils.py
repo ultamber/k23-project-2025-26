@@ -15,13 +15,13 @@ except Exception:
 # -------------------------------------------------------
 # Try import KaHIP – if it fails, fallback is enabled
 # -------------------------------------------------------
-try:
-    import kahip
-    KAHIP_AVAILABLE = True
-except Exception:
-    KAHIP_AVAILABLE = False
-    print("[graph_utils] KaHIP not available — using fallback partitioner.")
-
+#try:
+#    import kahip
+#    KAHIP_AVAILABLE = True
+#except Exception:
+#    KAHIP_AVAILABLE = False
+#    print("[graph_utils] KaHIP not available — using fallback partitioner.")
+KAHIP_AVAILABLE = False
 
 # -------------------------------------------------------
 # Fallback partitioner
