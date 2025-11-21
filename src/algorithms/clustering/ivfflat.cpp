@@ -172,6 +172,7 @@ double IVFFlat::calculateSilhouetteScore()
 
         if (ci < 0 || already_calculated)
             continue;
+        calculated_silhouettes.emplace_back(ci);
 
         const auto &xi = Data[i].values;
 
@@ -224,7 +225,6 @@ double IVFFlat::calculateSilhouetteScore()
 
         clusterSum += s_i;
         clusterCount ++;
-
     }
 
     return clusterSum / clusterCount;
