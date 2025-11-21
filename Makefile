@@ -3,7 +3,7 @@
 # ============================================================
 
 CXX := g++
-CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -Iinclude
+CXXFLAGS := -std=c++17 -O3 -Wall -Wextra -Iinclude
 
 SRC_DIR := src
 INC_DIR := include
@@ -26,7 +26,7 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
-	rm -rf $(OBJ_DIR) $(BIN_DIR) $(RUN_DIR)
+	rm -rf $(OBJ_DIR) $(BIN_DIR) $(RUN_DIR)/**/*.txt
 
 mnist:
 	@$(TARGET) -d ./datasets/MNIST/input.dat \

@@ -1,8 +1,8 @@
 #include "../../../include/algorithms/clustering/ivfflat.hpp"
+#include <iostream>
 #include <random>
 #include <limits>
 #include <algorithm>
-#include <numeric>
 #include <vector>
 
 /**
@@ -20,21 +20,16 @@ void IVFFlat::buildIndex()
         Lists.clear();
         return;
     }
+    Dim = Data[0].values.size();
 
     // slide 47 Run Lloyd's on √n training subset X'
-    int trainN = max(Kclusters, (int)sqrt((double)N)); trainN = min(trainN, N); // Don't exceed dataset size
-    mt19937_64 rng(Args.seed);
-    vector<int> idx(N);
-    iota(idx.begin(), idx.end(), 0);
-    shuffle(idx.begin(), idx.end(), rng);
-    idx.resize(trainN);
+    int trainN = min(max(Kclusters, (int)sqrt((double)N)), N);
+    vector<int> idx(trainN);
 
     vector<vector<float>> Ptrain;
     Ptrain.reserve(trainN);
     for (int id : idx)
         Ptrain.push_back(Data[id].values);
-
-    // slide 47: Learn centroids C = {c₁, ..., cₖ}
     kmeansWithPP(Ptrain, Kclusters, (unsigned)Args.seed, Centroids);
 
     // slide 47, Assignment phase - assign ALL points (not just training)
@@ -46,8 +41,8 @@ void IVFFlat::buildIndex()
 
         // j*(x) = argmin ||x - c_j||₂
         int best = 0;
-        double bd = l2(x, Centroids[0]);
-        for (int c = 1; c < Kclusters; ++c)
+        double bd = numeric_limits<double>::infinity();
+        for (int c = 0; c < Kclusters; ++c)
         {
             double d = l2(x, Centroids[c]);
             if (d < bd)
@@ -59,6 +54,7 @@ void IVFFlat::buildIndex()
         // slide 47, Append (id(x), x) to IL_j*(x)
         Lists[best].push_back(i);
     }
+    SilhouetteScore = calculateSilhouetteScore();
 }
 
 /**
@@ -124,13 +120,13 @@ void IVFFlat::search(const vector<VectorData> &queries, ofstream &out)
         }
 
         // slide 48, Return R nearest points from U
-        int keepApprox = std::min(Args.N, (int)distApprox.size());
+        int keepApprox = min(Args.N, (int)distApprox.size());
         if (keepApprox > 0)
         {
-            std::nth_element(distApprox.begin(),
+            nth_element(distApprox.begin(),
                            distApprox.begin() + keepApprox,
                            distApprox.end());
-            std::sort(distApprox.begin(), distApprox.begin() + keepApprox);
+            sort(distApprox.begin(), distApprox.begin() + keepApprox);
             distApprox.resize(keepApprox);
         }
 
@@ -138,150 +134,100 @@ void IVFFlat::search(const vector<VectorData> &queries, ofstream &out)
         calculatePerQueryMetrics(queries[qi].id, qi, tApprox, distApprox, rlist, out);
     }
     printSummary(Q, out);
+    out << "Silhouette Score: " << SilhouetteScore << endl; 
 }
 
 /**
- * Overall silhouette score ref 44-45
+ * Silhouette averages ref 45
  */
-double IVFFlat::silhouetteScore()
+double IVFFlat::calculateSilhouetteScore()
 {
     int N = Data.size();
     int k = Centroids.size();
-    if (N == 0 || k <= 1)
-        return 0.0;
-
-    vector<int> label(N, -1);
-    for (int c = 0; c < k; ++c)
-        for (int id : Lists[c])
-            label[id] = c;
-
-    double total = 0.0;
-    int validPoints = 0;
-
-    for (int i = 0; i < N; ++i)
-    {
-        int ci = label[i];
-        if (ci < 0)
-            continue;
-        const auto &xi = Data[i].values;
-
-        // slide 44: a(i) = average distance to objects in same cluster
-        double a_i = 0.0;
-        int sameCount = 0;
-        for (int id : Lists[ci])
-        {
-            if (id == i)
-                continue;
-            a_i += l2(xi, Data[id].values);
-            ++sameCount;
-        }
-        if (sameCount > 0)
-            a_i /= sameCount;
-        else
-            a_i = 0.0;
-
-        // slide 44: b(i) = average distance to next best cluster
-        double b_i = std::numeric_limits<double>::infinity();
-        for (int c = 0; c < k; ++c)
-        {
-            if (c == ci || Lists[c].empty())
-                continue;
-            double sum = 0.0;
-            for (int id : Lists[c])
-                sum += l2(xi, Data[id].values);
-            double avg = sum / Lists[c].size();
-            if (avg < b_i)
-                b_i = avg;
-        }
-
-        // slide 44: s(i) = (b(i) - a(i)) / max{a(i), b(i)}
-        double s_i = 0.0;
-        if (a_i < b_i)
-            s_i = 1.0 - (a_i / b_i);
-        else if (a_i > b_i)
-            s_i = (b_i / a_i) - 1.0;
-        else
-            s_i = 0.0;
-
-        total += s_i;
-        ++validPoints;
-    }
-
-    return (validPoints > 0) ? total / validPoints : 0.0;
-}
-
-/**
- * Per-cluster silhouette averages ref 45
- */
-vector<double> IVFFlat::silhouettePerCluster()
-{
-    int N = Data.size();
-    int k = Centroids.size();
+    double clusterSum = 0.0;
+    int clusterCount = 0;
+    vector<int> calculated_silhouettes;
     if (N == 0 || k <= 1)
         return {};
 
-    vector<int> label(N, -1);
-    for (int c = 0; c < k; ++c)
-        for (int id : Lists[c])
-            label[id] = c;
-
-    vector<double> clusterSum(k, 0.0);
-    vector<int> clusterCount(k, 0);
-
-    for (int i = 0; i < N; ++i)
-    {
-        int ci = label[i];
-        if (ci < 0)
+    vector<int> point_id_to_centroid(N, -1);
+    for (int c = 0; c < k; ++c) {
+        if (Lists[c].empty())
             continue;
+        for (int id : Lists[c])
+            point_id_to_centroid[id] = c;
+    }
+
+
+    for (int i = 0; i < N; ++i) {
+        int ci = point_id_to_centroid[i];
+
+        bool already_calculated = false;
+        for (int l : calculated_silhouettes){
+            if (l == ci){
+                already_calculated = true;
+                break;
+            }
+        }
+
+        if (ci < 0 || already_calculated)
+            continue;
+
         const auto &xi = Data[i].values;
 
         double a_i = 0.0;
-        int sameCount = 0;
-        for (int id : Lists[ci])
-        {
+        double b_i = 0.0;
+        int count = 0;
+
+        for (int id : Lists[ci]) {
             if (id == i)
                 continue;
             a_i += l2(xi, Data[id].values);
-            ++sameCount;
+            ++count;
         }
-        if (sameCount > 0)
-            a_i /= sameCount;
+        if (count > 0)
+            a_i /= count;
         else
             a_i = 0.0;
 
-        double b_i = std::numeric_limits<double>::infinity();
-        for (int c = 0; c < k; ++c)
-        {
-            if (c == ci || Lists[c].empty())
+        double closest_neighbor_dist = numeric_limits<double>::infinity();
+        int closest_neighbor_centroid = -1;
+        for (int c = 0; c < k; c++) {
+            if (c == ci || Lists[c].empty()) 
                 continue;
-            double sum = 0.0;
-            for (int id : Lists[c])
-                sum += l2(xi, Data[id].values);
-            double avg = sum / Lists[c].size();
-            if (avg < b_i)
-                b_i = avg;
+            double distance = l2(xi, Data[c].values);
+            if (distance < closest_neighbor_dist) {
+                closest_neighbor_centroid = c;
+                closest_neighbor_dist = distance;
+            }
+        }
+
+        if (closest_neighbor_centroid != -1) {
+            count = 0;
+            for (int id : Lists[closest_neighbor_centroid]) {
+                if (id == closest_neighbor_centroid)
+                    continue;
+                b_i += l2(xi, Data[id].values);
+                count++;
+            }
+
+            if (count > 0)
+                b_i /= count;
+            else
+                b_i = 0;
         }
 
         double s_i = 0.0;
-        if (a_i < b_i)
-            s_i = 1.0 - (a_i / b_i);
-        else if (a_i > b_i)
-            s_i = (b_i / a_i) - 1.0;
-        else
-            s_i = 0.0;
+        if (a_i <= 0.0 && b_i <= 0.0)
+            continue;
+        s_i = (b_i - a_i) / max(a_i, b_i);
 
-        clusterSum[ci] += s_i;
-        ++clusterCount[ci];
+        clusterSum += s_i;
+        clusterCount ++;
+
     }
 
-    vector<double> clusterAvg(k, 0.0);
-    for (int c = 0; c < k; ++c)
-        if (clusterCount[c] > 0)
-            clusterAvg[c] = clusterSum[c] / clusterCount[c];
-        else
-            clusterAvg[c] = 0.0;
-
-    return clusterAvg;
+    return clusterSum / clusterCount;
 }
 
 /**
@@ -294,44 +240,49 @@ void IVFFlat::kmeansWithPP(
     unsigned seed,
     vector<vector<float>> &centroids
 ) {
-    int n = P.size();
-    if (n == 0 || k <= 0) return;
 
-    centroids.clear();
+    int n = P.size();
     centroids.reserve(k);
 
     mt19937 gen(seed);
-    uniform_int_distribution<> dis(0, n - 1);
 
-    // 1. Pick the first centroid randomly
-    centroids.push_back(P[dis(gen)]);
+    // (1) Choose the first centroid uniformly at random
+    uniform_int_distribution<int> uni_dist(0, n - 1);
 
-    vector<float> dist2(n, numeric_limits<float>::max());
+    int first = uni_dist(gen);
+    centroids.emplace_back(P[first]);
 
-    for (int c = 1; c < k; ++c) {
-        // 2. Compute squared distances to the nearest centroid
-        for (int i = 0; i < n; ++i) {
-            float d = l2(P[i], centroids.back());
-            if (d < dist2[i]) dist2[i] = d;
+
+    vector<double> D(n, 0.0);
+
+    // (2)-(4) Choose the next k-1 centroids
+    for (int t = 1; t < k; ++t) {
+        double sumD = 0.0;
+
+        // Compute D(i) = distance to nearest chosen centroid
+        for (int i = 0; i < n; i++) {
+            double d = l2(P[i], centroids[0]);
+            for (int c = 0; c < t; c++) {
+                d = min(d, l2(P[i], centroids[c]));
+            }
+            D[i] = d;
+            sumD += d;
         }
 
-        // 3. Pick next centroid randomly weighted by distance squared
-        float sum = 0.0f;
-        for (float d : dist2) sum += d;
+        // Choose next centroid with probability proportional to D(i)
+        uniform_real_distribution<double> dist_double(0.0, sumD);
+        double rnd = dist_double(gen);
 
-        uniform_real_distribution<float> u(0.0f, sum);
-        float r = u(gen);
-
-        float cumulative = 0.0f;
-        int nextIndex = 0;
-        for (int i = 0; i < n; ++i) {
-            cumulative += dist2[i];
-            if (cumulative >= r) {
-                nextIndex = i;
+        double cumulative = 0.0;
+        int next = 0;
+        for (int i = 0; i < n; i++) {
+            cumulative += D[i];
+            if (cumulative >= rnd) {
+                next = i;
                 break;
             }
         }
 
-        centroids.push_back(P[nextIndex]);
+        centroids.emplace_back(P[next]);
     }
 }

@@ -14,6 +14,7 @@
 void LSH::buildIndex()
 {
     // Set default parameters if not provided
+    Dim = Data[0].values.size();
     w_ = Args.w > 0 ? Args.w : 4.0f;
     int L = Args.L > 0 ? Args.L : 10;
     int k = Args.k > 0 ? Args.k : 4;

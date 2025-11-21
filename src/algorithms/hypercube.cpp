@@ -18,6 +18,7 @@ void Hypercube::buildIndex()
         Data.size();
     int dlog = (n > 0) ? (int)floor(log2((double)max<size_t>(1, n))) : 1;
     kproj_ = (Args.kproj > 0) ? Args.kproj : max(1, dlog - 2);
+    Dim = Data[0].values.size();
 
     // slide 18: w ∈ [2, 6], larger for range queries
     w_ = (Args.w > 0) ? Args.w : 4.0f;

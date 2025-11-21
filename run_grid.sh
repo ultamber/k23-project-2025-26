@@ -219,8 +219,10 @@ run_ivfflat() {
         local out="${OUTDIR}/${tag}.txt"
         local gt="${OUTDIR}/ground_truth.csv"
         echo "==> IVFFlat ${tag}"
-        "$BIN" -d "$DATA" -q "$QUER" -o "$out" -gt "$gt" -type "$TYPE" \
-          -ivfflat -kclusters "$kc" -nprobe "$np" -N 1 -R "$R_PARAM" -seed "$seed"
+        local command=("$BIN" -d "$DATA" -q "$QUER" -o "$out" -gt "$gt" -type "$TYPE" \
+          -ivfflat -kclusters "$kc" -nprobe "$np" -N 1 -R "$R_PARAM" -seed "$seed")
+        echo "${command[@]}"
+        "${command[@]}"
         local metrics=$(parse_metrics "$out")
         echo "IVFFlat,kclusters=${kc};nprobe=${np};seed=${seed},${metrics},,,,,," >> "$SUMMARY"
       done
@@ -247,9 +249,11 @@ run_ivfpq() {
             local out="${OUTDIR}/${tag}.txt"
             local gt="${OUTDIR}/ground_truth.csv"
             echo "==> IVFPQ ${tag}"
-            "$BIN" -d "$DATA" -q "$QUER" -o "$out" -gt "$gt" -type "$TYPE" \
+            local command=("$BIN" -d "$DATA" -q "$QUER" -o "$out" -gt "$gt" -type "$TYPE" \
               -ivfpq -kclusters "$kc" -nprobe "$np" -Msub "$Msub" -nbits "$nb" \
-              -N 1 -R "$R_PARAM" -seed "$seed"
+              -N 1 -R "$R_PARAM" -seed "$seed")
+            echo "${command[@]}"
+            "${command[@]}"
             local metrics=$(parse_metrics "$out")
             echo "IVFPQ,kclusters=${kc};nprobe=${np};M=${Msub};nbits=${nb};seed=${seed},${metrics},,,,,," >> "$SUMMARY"
           done
