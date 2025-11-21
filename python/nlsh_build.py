@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-nlsh_build.py
--------------
-Neural LSH index construction pipeline.
+nlsh_build.py (IMPROVED)
+------------------------
+Neural LSH index construction pipeline with k-NN graph caching.
 
 Steps:
 1. Load dataset (MNIST or SIFT)
-2. Build k-NN graph using LSH from Project 1
+2. Build or load k-NN graph
 3. Symmetrize graph with edge weights
 4. Convert to CSR format
 5. Run KaHIP for balanced partitioning
@@ -24,7 +24,7 @@ from modules.dataset_parser import load_dataset
 from modules.graph_utils import build_symmetric_graph, to_csr, run_kahip
 from modules.models import MLPClassifier, train_model
 from modules.utils import set_seed, save_index
-from modules.lsh_knn import compute_knn_lsh
+from modules.lsh_knn import compute_knn_sklearn
 
 
 def parse_args():
@@ -42,8 +42,16 @@ def parse_args():
     # k-NN graph parameters
     parser.add_argument("--knn", type=int, default=10, 
                         help="Number of neighbors for k-NN graph")
+    parser.add_argument("--use_exact_knn", action="store_true",
+                        help="Use exact k-NN (sklearn) instead of LSH (recommended)")
     parser.add_argument("--search_path", default="../bin/search", 
                         help="Path to Project 1 LSH search executable")
+    
+    # k-NN graph caching (NEW)
+    parser.add_argument("--knn_graph_file", type=str, default=None,
+                        help="Load pre-computed k-NN graph from this file (.npy)")
+    parser.add_argument("--save_knn_graph", type=str, default=None,
+                        help="Save computed k-NN graph to this file (.npy) for reuse")
     
     # KaHIP partitioning parameters
     parser.add_argument("-m", type=int, default=100, 
@@ -58,14 +66,16 @@ def parse_args():
                         help="Number of MLP layers")
     parser.add_argument("--nodes", type=int, default=64, 
                         help="Hidden nodes per layer")
-    parser.add_argument("--dropout", type=float, default=0.1,
-                        help="Dropout rate")
+    parser.add_argument("--dropout", type=float, default=0.0,
+                        help="Dropout rate (default: 0.0)")
     parser.add_argument("--epochs", type=int, default=10, 
                         help="Training epochs")
     parser.add_argument("--batch_size", type=int, default=128, 
                         help="Batch size for training")
     parser.add_argument("--lr", type=float, default=1e-3, 
                         help="Learning rate")
+    parser.add_argument("--weight_decay", type=float, default=0.0,
+                        help="L2 regularization weight decay")
     
     # Other parameters
     parser.add_argument("--seed", type=int, default=1, 
@@ -74,6 +84,66 @@ def parse_args():
                         help="Use small subset for debugging (1000 vectors)")
     
     return parser.parse_args()
+
+
+def load_or_build_knn_graph(X, args):
+    """
+    Load k-NN graph from file or build it (and optionally save).
+    
+    Returns:
+        knn_graph: (n, k) array of neighbor indices
+    """
+    # Option 1: Load pre-computed graph
+    if args.knn_graph_file:
+        print(f" Loading pre-computed k-NN graph from {args.knn_graph_file}...")
+        knn_graph = np.load(args.knn_graph_file)
+        print(f" k-NN graph loaded: shape={knn_graph.shape}")
+        
+        # Validate shape
+        if knn_graph.shape[0] != X.shape[0]:
+            raise ValueError(
+                f"k-NN graph has {knn_graph.shape[0]} rows but dataset has {X.shape[0]} vectors"
+            )
+        
+        return knn_graph
+    
+    # Option 2: Build graph
+    print(f"\n[STEP 2] Building k-NN graph (k={args.knn})...")
+    
+    if args.use_exact_knn:
+        print(f" Using exact k-NN (sklearn - recommended)...")
+        knn_graph = compute_knn_sklearn(X, args.knn)
+        print(f" Exact k-NN graph computed")
+    else:
+        print(f" Using LSH for k-NN graph (slower)...")
+        try:
+            from modules.lsh_knn import compute_knn_lsh
+            knn_graph = compute_knn_lsh(
+                X,
+                args.knn,
+                search_path=args.search_path,
+                dtype=args.type
+            )
+            print(f"✓ k-NN graph built successfully")
+            
+        except FileNotFoundError as e:
+            print(f"\n  {e}")
+            print(f"Falling back to exact k-NN (sklearn)...")
+            knn_graph = compute_knn_sklearn(X, args.knn)
+            print(f"✓ Exact k-NN graph computed")
+        
+        except Exception as e:
+            print(f"\n Error building k-NN graph: {e}")
+            print(f"Falling back to exact k-NN (sklearn)...")
+            knn_graph = compute_knn_sklearn(X, args.knn)
+    
+    # Option 3: Save graph for later reuse
+    if args.save_knn_graph:
+        print(f" Saving k-NN graph to {args.save_knn_graph}...")
+        np.save(args.save_knn_graph, knn_graph)
+        print(f"k-NN graph saved for reuse")
+    
+    return knn_graph
 
 
 def main():
@@ -95,7 +165,7 @@ def main():
     X = load_dataset(args.d, args.type)
     
     if args.debug:
-        print(f"\n⚠️  DEBUG MODE: Using subset of 1000 vectors")
+        print(f"\n  DEBUG MODE: Using subset of 1000 vectors")
         X = X[:1000]
     
     n, d = X.shape
@@ -109,31 +179,9 @@ def main():
         X = X / 255.0
     
     # ========================================================================
-    # STEP 2: Build k-NN Graph using LSH
+    # STEP 2: Load or Build k-NN Graph
     # ========================================================================
-    print(f"\n[STEP 2] Building k-NN graph (k={args.knn}) using LSH...")
-    
-    try:
-        knn_graph = compute_knn_lsh(
-            X,
-            args.knn,
-            search_path=args.search_path,
-            dtype=args.type
-        )
-        print(f"✓ k-NN graph built successfully")
-        
-    except FileNotFoundError as e:
-        print(f"\n⚠️  {e}")
-        print(f"Falling back to exact k-NN (sklearn)...")
-        from modules.lsh_knn import compute_knn_sklearn
-        knn_graph = compute_knn_sklearn(X, args.knn)
-        print(f"✓ Exact k-NN graph computed")
-    
-    except Exception as e:
-        print(f"\n❌ Error building k-NN graph: {e}")
-        print(f"Falling back to exact k-NN (sklearn)...")
-        from modules.lsh_knn import compute_knn_sklearn
-        knn_graph = compute_knn_sklearn(X, args.knn)
+    knn_graph = load_or_build_knn_graph(X, args)
     
     # ========================================================================
     # STEP 3: Symmetrize Graph with Edge Weights
@@ -142,23 +190,29 @@ def main():
     adj = build_symmetric_graph(knn_graph)
     print(f"✓ Graph symmetrized")
     
+    # Print graph statistics
+    total_edges = sum(len(neighbors) for neighbors in adj)
+    avg_degree = total_edges / n
+    print(f"  Total edges: {total_edges:,}")
+    print(f"  Average degree: {avg_degree:.1f}")
+    
     # ========================================================================
     # STEP 4: Convert to CSR Format
     # ========================================================================
     print(f"\n[STEP 4] Converting to CSR format for KaHIP...")
     csr_graph = to_csr(adj)
-    
-    # # Validate CSR format
-    # try:
-    #     validate_csr(csr_graph)
-    # except AssertionError as e:
-    #     print(f"❌ CSR validation failed: {e}")
-    #     raise
+    print(f"✓ CSR format created")
+    print(f"  xadj size: {len(csr_graph['xadj'])}")
+    print(f"  adjncy size: {len(csr_graph['adjncy'])}")
     
     # ========================================================================
     # STEP 5: Run KaHIP for Balanced Partitioning
     # ========================================================================
     print(f"\n[STEP 5] Running KaHIP partitioning...")
+    print(f"  Target partitions: {args.m}")
+    print(f"  Imbalance: {args.imbalance}")
+    print(f"  Mode: {args.kahip_mode}")
+    
     labels = run_kahip(
         csr_graph,
         m=args.m,
@@ -174,7 +228,15 @@ def main():
     print(f"  Expected: {args.m}")
     
     if len(unique_labels) != args.m:
-        print(f"  ⚠️  Warning: Got {len(unique_labels)} partitions instead of {args.m}")
+        print(f"    Warning: Got {len(unique_labels)} partitions instead of {args.m}")
+    
+    # Partition balance statistics
+    partition_sizes = np.bincount(labels)
+    print(f"  Partition sizes:")
+    print(f"    Min: {partition_sizes.min()}")
+    print(f"    Max: {partition_sizes.max()}")
+    print(f"    Mean: {partition_sizes.mean():.1f}")
+    print(f"    Std: {partition_sizes.std():.1f}")
     
     # ========================================================================
     # STEP 6: Train MLP Classifier
@@ -188,6 +250,7 @@ def main():
     print(f"  Epochs: {args.epochs}")
     print(f"  Batch size: {args.batch_size}")
     print(f"  Learning rate: {args.lr}")
+    print(f"  Weight decay: {args.weight_decay}")
     
     model = MLPClassifier(
         d_in=d,
@@ -204,10 +267,11 @@ def main():
         epochs=args.epochs,
         batch_size=args.batch_size,
         lr=args.lr,
+        weight_decay=args.weight_decay,
         verbose=True
     )
     
-    print(f"✓ MLP training completed")
+    print(f" MLP training completed")
     
     # ========================================================================
     # STEP 7: Save Index
@@ -224,6 +288,10 @@ def main():
     print(f"  - inverted_index.pkl (partition → point mapping)")
     print(f"  - dataset.npy (original data)")
     print(f"  - metadata.json (configuration)")
+    
+    if args.save_knn_graph:
+        print(f"  - {args.save_knn_graph} (k-NN graph for reuse)")
+    
     print()
 
 

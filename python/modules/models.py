@@ -55,6 +55,84 @@ def _to_tensor(X, y):
     return X, y
 
 
+# def train_model(
+#     model,
+#     X,
+#     y,
+#     epochs=10,
+#     batch_size=128,
+#     lr=1e-3,
+#     weight_decay=0.0,
+#     verbose=True,
+# ):
+#     """
+#     Εκπαίδευση MLP με CrossEntropyLoss.
+
+#     model  : instance of MLPClassifier
+#     X      : numpy array ή tensor shape (n, d)
+#     y      : labels (partition ids) shape (n,)
+#     epochs : #περίοδοι εκπαίδευσης
+#     batch_size : μέγεθος batch
+#     lr     : learning rate (Adam)
+#     weight_decay : L2 regularization (0 αν δεν θέλεις)
+#     """
+#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#     model.to(device)
+
+#     # μετατροπή σε tensors
+#     X, y = _to_tensor(X, y)
+#     dataset = TensorDataset(X, y)
+#     loader = DataLoader(
+#         dataset,
+#         batch_size=batch_size,
+#         shuffle=True,
+#         num_workers=0,
+#         pin_memory=True if device.type == "cuda" else False,
+#     )
+
+#     loss_fn = nn.CrossEntropyLoss()
+#     optimizer = torch.optim.Adam(
+#         model.parameters(), lr=lr, weight_decay=weight_decay
+#     )
+
+#     model.train()
+#     n_samples = len(dataset)
+
+#     for epoch in range(1, epochs + 1):
+#         running_loss = 0.0
+#         correct = 0
+
+#         for xb, yb in loader:
+#             xb = xb.to(device)
+#             yb = yb.to(device)
+
+#             optimizer.zero_grad()
+#             logits = model(xb)
+#             loss = loss_fn(logits, yb)
+#             loss.backward()
+#             optimizer.step()
+
+#             running_loss += loss.item() * xb.size(0)
+
+#             # accuracy
+#             with torch.no_grad():
+#                 preds = torch.argmax(logits, dim=1)
+#                 correct += (preds == yb).sum().item()
+
+#         avg_loss = running_loss / n_samples
+#         acc = correct / n_samples
+
+#         if verbose:
+#             print(
+#                 f"Epoch {epoch:03d}/{epochs} "
+#                 f"- loss: {avg_loss:.4f} "
+#                 f"- acc: {acc*100:.2f}%"
+#             )
+
+#     model.to("cpu")
+#     return model
+# In modules/models.py, update train_model():
+
 def train_model(
     model,
     X,
@@ -63,27 +141,30 @@ def train_model(
     batch_size=128,
     lr=1e-3,
     weight_decay=0.0,
+    val_split=0.1,  # Add validation
+    patience=5,      # Early stopping
     verbose=True,
 ):
-    """
-    Εκπαίδευση MLP με CrossEntropyLoss.
-
-    model  : instance of MLPClassifier
-    X      : numpy array ή tensor shape (n, d)
-    y      : labels (partition ids) shape (n,)
-    epochs : #περίοδοι εκπαίδευσης
-    batch_size : μέγεθος batch
-    lr     : learning rate (Adam)
-    weight_decay : L2 regularization (0 αν δεν θέλεις)
-    """
+    """Train MLP with validation and early stopping."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
-    # μετατροπή σε tensors
+    # Split train/val
     X, y = _to_tensor(X, y)
-    dataset = TensorDataset(X, y)
-    loader = DataLoader(
-        dataset,
+    n = len(X)
+    n_val = int(n * val_split)
+    n_train = n - n_val
+    
+    indices = torch.randperm(n)
+    train_idx = indices[:n_train]
+    val_idx = indices[n_train:]
+    
+    X_train, y_train = X[train_idx], y[train_idx]
+    X_val, y_val = X[val_idx], y[val_idx]
+    
+    train_dataset = TensorDataset(X_train, y_train)
+    train_loader = DataLoader(
+        train_dataset,
         batch_size=batch_size,
         shuffle=True,
         num_workers=0,
@@ -95,14 +176,17 @@ def train_model(
         model.parameters(), lr=lr, weight_decay=weight_decay
     )
 
-    model.train()
-    n_samples = len(dataset)
+    best_val_acc = 0.0
+    patience_counter = 0
+    best_state = None
 
     for epoch in range(1, epochs + 1):
+        # Training
+        model.train()
         running_loss = 0.0
         correct = 0
 
-        for xb, yb in loader:
+        for xb, yb in train_loader:
             xb = xb.to(device)
             yb = yb.to(device)
 
@@ -114,20 +198,46 @@ def train_model(
 
             running_loss += loss.item() * xb.size(0)
 
-            # accuracy
             with torch.no_grad():
                 preds = torch.argmax(logits, dim=1)
                 correct += (preds == yb).sum().item()
 
-        avg_loss = running_loss / n_samples
-        acc = correct / n_samples
+        train_loss = running_loss / n_train
+        train_acc = correct / n_train
+
+        # Validation
+        model.eval()
+        with torch.no_grad():
+            X_val_gpu = X_val.to(device)
+            y_val_gpu = y_val.to(device)
+            
+            val_logits = model(X_val_gpu)
+            val_loss = loss_fn(val_logits, y_val_gpu).item()
+            val_preds = torch.argmax(val_logits, dim=1)
+            val_acc = (val_preds == y_val_gpu).float().mean().item()
 
         if verbose:
             print(
                 f"Epoch {epoch:03d}/{epochs} "
-                f"- loss: {avg_loss:.4f} "
-                f"- acc: {acc*100:.2f}%"
+                f"- train_loss: {train_loss:.4f} train_acc: {train_acc*100:.2f}% "
+                f"- val_loss: {val_loss:.4f} val_acc: {val_acc*100:.2f}%"
             )
+
+        # Early stopping
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            patience_counter = 0
+            best_state = model.state_dict().copy()
+        else:
+            patience_counter += 1
+            if patience_counter >= patience:
+                print(f"Early stopping at epoch {epoch}")
+                break
+
+    # Load best model
+    if best_state is not None:
+        model.load_state_dict(best_state)
+        print(f"Loaded best model with val_acc: {best_val_acc*100:.2f}%")
 
     model.to("cpu")
     return model

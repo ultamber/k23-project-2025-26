@@ -1,107 +1,143 @@
-# graph_utils.py
 from sklearn.neighbors import NearestNeighbors
 import numpy as np
+import random
+import signal
+from contextlib import contextmanager
+
+# -------------------------------------------------------
+# Try import KaHIP – if it fails, use fallback
+# -------------------------------------------------------
 try:
     import kahip
-    kaffpa = kahip.kaffpa
+    KAHIP_AVAILABLE = False  # Force fallback due to Colab compatibility issues
+    print("[graph_utils] KaHIP library found but using fallback partitioner for stability")
 except Exception:
-    import warnings
-    import random
-    warnings.warn(
-        "kahip module not found; using fallback partitioner. "
-        "Install kahip for better partitions (e.g. pip install kahip).",
-        UserWarning,
-    )
-# -------------------------------------------------------
-# Try import KaHIP – if it fails, fallback is enabled
-# -------------------------------------------------------
-#try:
-#    import kahip
-#    KAHIP_AVAILABLE = True
-#except Exception:
-#    KAHIP_AVAILABLE = False
-#    print("[graph_utils] KaHIP not available — using fallback partitioner.")
-KAHIP_AVAILABLE = False
+    KAHIP_AVAILABLE = False
+    print("[graph_utils] KaHIP not available — using fallback partitioner.")
 
 # -------------------------------------------------------
 # Fallback partitioner
 # -------------------------------------------------------
 def fallback_partition(csr, m):
+    """Simple round-robin partitioning fallback"""
     n = len(csr["vwgt"])
     labels = np.zeros(n, dtype=np.int32)
     for i in range(n):
         labels[i] = i % m
-    print(f"[graph_utils] Fallback partitioner used. m = {m}")
+    
+    # Calculate edgecut for reporting
+    edgecut = 0
+    for i in range(n):
+        start = csr["xadj"][i]
+        end = csr["xadj"][i + 1]
+        bi = labels[i]
+        for idx in range(start, end):
+            j = csr["adjncy"][idx]
+            if labels[j] != bi:
+                w = csr["adjcwgt"][idx]
+                edgecut += w
+    edgecut = edgecut // 2
+    
+    print(f"[graph_utils] Fallback partitioner used. m = {m}, edgecut = {edgecut}")
     return labels
 
 
-# -------------------------------------------------------
-# Wrapper that tries KaHIP and falls back on error
-# -------------------------------------------------------
-def run_kahip(csr, m=100, imbalance=0.03, mode=2, seed=1):
+import signal
+from contextlib import contextmanager
 
+class TimeoutException(Exception):
+    pass
+
+@contextmanager
+def time_limit(seconds):
+    def signal_handler(signum, frame):
+        raise TimeoutException("Timed out!")
+    signal.signal(signal.SIGALRM, signal_handler)
+    signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+
+
+# -------------------------------------------------------
+# Main KaHIP wrapper function
+# -------------------------------------------------------
+def run_kahip(csr, m=100, imbalance=0.03, mode=2, seed=1, timeout=30):
+    """
+    Run KaHIP partitioner or fallback if not available.
+    
+    Args:
+        csr: Dict with keys 'xadj', 'adjncy', 'adjcwgt', 'vwgt'
+        m: Number of partitions
+        imbalance: Allowed imbalance (default 0.03)
+        mode: KaHIP mode (0=fast, 1=eco, 2=strong)
+        seed: Random seed
+        timeout: Timeout in seconds (default 30)
+    
+    Returns:
+        Array of partition labels (length n)
+    """
     if not KAHIP_AVAILABLE:
         return fallback_partition(csr, m)
 
     print("Running KaHIP partitioner…")
+    print(f"  n = {len(csr['vwgt'])}, m = {m}, imbalance = {imbalance}, mode = {mode}")
 
     try:
-        edgecut, blocks = kahip.kaffpa(
-            np.array(csr["vwgt"], dtype=np.int32),
-            np.array(csr["xadj"], dtype=np.int64),
-            np.array(csr["adjcwgt"], dtype=np.int32),
-            np.array(csr["adjncy"], dtype=np.int32),
-            nblocks=m,
-            imbalance=imbalance,
-            suppress_output=True,
-            seed=seed,
-            mode=mode,
-        )
-        print(f"KaHIP edgecut = {edgecut}")
-        return np.array(blocks, dtype=np.int32)
+        # Try with timeout to prevent hanging
+        with time_limit(timeout):
+            # KaHIP expects 9 positional arguments:
+            # 1. vwgt (vertex weights)
+            # 2. xadj (adjacency index pointer)
+            # 3. adjcwgt (edge weights)
+            # 4. adjncy (adjacency list)
+            # 5. nblocks (int)
+            # 6. imbalance (float)
+            # 7. suppress_output (bool)
+            # 8. seed (int)
+            # 9. mode (int)
+            edgecut, blocks = kahip.kaffpa(
+                csr["vwgt"],      # already numpy array
+                csr["xadj"],      # already numpy array
+                csr["adjcwgt"],   # already numpy array
+                csr["adjncy"],    # already numpy array
+                m,                # nblocks (int)
+                imbalance,        # imbalance (float)
+                True,             # suppress_output (bool)
+                seed,             # seed (int)
+                mode              # mode (int)
+            )
+            print(f"✓ KaHIP completed: edgecut = {edgecut}")
+            return np.array(blocks, dtype=np.int32)
 
-    except Exception as e:
-        print("⚠ KaHIP crashed, switching to fallback.")
-        print(e)
+    except TimeoutException:
+        print(f" KaHIP timed out after {timeout} seconds")
+        print("  Switching to fallback partitioner...")
         return fallback_partition(csr, m)
-
-def kaffpa(vwgt, xadj, adjcwgt, adjncy, nblocks=100, imbalance=0.03, suppress_output=True, seed=1, mode=2):
-    """
-    Lightweight fallback partitioner: deterministic round-robin assignment
-    with optional seed-based randomness; returns (edgecut, blocks).
-    This is a simple substitute so the module runs without the kahip package.
-    """
-    random.seed(seed)
-    n = len(vwgt)
-    # simple round-robin assignment
-    blocks = [i % nblocks for i in range(n)]
-    # compute edgecut (sum of crossing edge weights, divided by 2 for undirected)
-    edgecut = 0
-    for i in range(n):
-        start = xadj[i]
-        end = xadj[i + 1]
-        bi = blocks[i]
-        for idx in range(start, end):
-            j = adjncy[idx]
-            if blocks[j] != bi:
-                w = adjcwgt[idx] if adjcwgt else 1
-                edgecut += w
-    edgecut = edgecut // 2
-    return int(edgecut), blocks
+    
+    except Exception as e:
+        print(f" KaHIP crashed: {e}")
+        print("  Switching to fallback partitioner...")
+        return fallback_partition(csr, m)
 
 
 def build_knn_graph(X, k=10):
     """
-    Κατασκευή k-NN γράφου.
-    Επιστρέφει indices: shape (n, k)
-    όπου indices[i] = τα k κοντινότερα neighbors του X[i].
+    Build k-NN graph.
+    Returns indices: shape (n, k) where indices[i] = k nearest neighbors of X[i].
     """
     nn = NearestNeighbors(n_neighbors=k, metric="euclidean", algorithm="auto")
     nn.fit(X)
     _, indices = nn.kneighbors(X)
     return indices
 
+
 def build_symmetric_graph(knn_indices):
+    """
+    Build symmetric weighted graph from k-NN indices.
+    Mutual edges get weight 2, one-sided edges get weight 1.
+    """
     n, k = knn_indices.shape
     adj = [{} for _ in range(n)]  # adjacency as dicts for merging
 
@@ -120,7 +156,17 @@ def build_symmetric_graph(knn_indices):
 
     return adj
 
+
 def to_csr(adj):
+    """
+    Convert adjacency list to CSR format for KaHIP.
+    
+    Args:
+        adj: List of dicts, where adj[i] = {neighbor: weight, ...}
+    
+    Returns:
+        Dict with keys: 'xadj', 'adjncy', 'adjcwgt', 'vwgt'
+    """
     n = len(adj)
     xadj = [0]
     adjncy = []
@@ -132,7 +178,7 @@ def to_csr(adj):
         adjcwgt.extend(neighs.values())
         xadj.append(len(adjncy))
 
-    vwgt = [1] * n    # <--- ΦΤΙΑΞΕ ΤΟ: πρέπει να είναι λίστα, όχι None
+    vwgt = [1] * n  # uniform vertex weights
 
     return {
         "xadj": np.array(xadj, dtype=np.int64),
@@ -140,36 +186,3 @@ def to_csr(adj):
         "adjcwgt": np.array(adjcwgt, dtype=np.int32),
         "vwgt": np.array(vwgt, dtype=np.int32),
     }
-
-# 1. Build a k−NN graph from data (e.g. sklearn NearestNeighbors)
-# 2. Convert to (CSR) arrays: xadj, adjncy, adjcwgt, vwgt
-# 3. Call KaHIP
-# 4. Use 'blocks' as partition labels
-# Outputs: edgecut = total cut weight, blocks = list of partition labels.
-# Format: CSR (Compressed Sparse Row) convention: undirected, integer weights.
-# Larger imbalance allows cheaper cuts but unequal partitions.
-# Higher mode gives better accuracy at higher runtime.
-def run_kahip(csr, m=100, imbalance=0.03, mode=2, seed=1):
-    print("Running KaHIP partitioner…")
-    print("CSR xadj len:", len(csr["xadj"]), "dtype:", csr["xadj"].dtype)
-    print("CSR adjncy len:", len(csr["adjncy"]), "dtype:", csr["adjncy"].dtype)
-    print("CSR adjcwgt len:", len(csr["adjcwgt"]), "dtype:", csr["adjcwgt"].dtype)
-    print("CSR vwgt:", csr["vwgt"])
-    print("m =", m, "imbalance =", imbalance, "mode =", mode)
-
-    # KaHIP requires standard CSR ordering:
-    # xadj, adjncy, vwgt, adjwgt, num_partitions, imbalance, suppress_output, seed, mode
-    edgecut, blocks = kahip.kaffpa(
-        csr["xadj"],         # index pointer array
-        csr["adjncy"],       # adjacency list
-        csr.get("vwgt", None),
-        csr.get("adjcwgt", None),
-        m,                   # number of partitions
-        imbalance,           # imbalance %
-        True,                # suppress KaHIP output
-        seed,                # random seed
-        mode                 # fast / eco / strong
-    )
-
-    print(f"KaHIP edgecut = {edgecut}")
-    return np.array(blocks, dtype=np.int32)
