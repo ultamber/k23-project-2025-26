@@ -46,8 +46,9 @@ def parse_args():
                         help="Use exact k-NN (sklearn) instead of LSH (recommended)")
     parser.add_argument("--search_path", default="../bin/search", 
                         help="Path to Project 1 LSH search executable")
+    parser.add_argument("--calculated_output",default="")
     
-    # k-NN graph caching (NEW)
+    # k-NN graph caching
     parser.add_argument("--knn_graph_file", type=str, default=None,
                         help="Load pre-computed k-NN graph from this file (.npy)")
     parser.add_argument("--save_knn_graph", type=str, default=None,
@@ -121,6 +122,7 @@ def load_or_build_knn_graph(X, args):
             knn_graph = compute_knn_lsh(
                 X,
                 args.knn,
+                args.calculated_output,
                 search_path=args.search_path,
                 dtype=args.type
             )

@@ -3,7 +3,7 @@ import tempfile
 import numpy as np
 from pathlib import Path
 
-def compute_knn_lsh(X, k, search_path="../bin/search", dtype="mnist", 
+def compute_knn_lsh(X, k,calculated_output="", search_path="../bin/search", dtype="mnist", 
                     dataset_path="../datasets/MNIST/train-images.idx3-ubyte",
                     query_path="../datasets/MNIST/t10k-images.idx3-ubyte"):
     """
@@ -65,13 +65,18 @@ def compute_knn_lsh(X, k, search_path="../bin/search", dtype="mnist",
         print(f"Command: {' '.join(cmd)}")
         
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=1800,  # 30 minute timeout
-                check=True
-            )
+            # Skip subprocess if pre-calculated output file is provided
+            if calculated_output and Path(calculated_output).exists():
+                print(f"Using pre-calculated output file: {calculated_output}")
+                output_file = Path(calculated_output)
+            else:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=1800,  # 30 minute timeout
+                    check=True
+                )
             
             print(f"Parsing LSH output...")
             # Note: n here should be the number of queries (from query_path)
