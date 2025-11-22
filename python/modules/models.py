@@ -137,12 +137,12 @@ def train_model(
     model,
     X,
     y,
-    epochs=10,
+    epochs=50,
     batch_size=128,
     lr=1e-3,
     weight_decay=0.0,
     val_split=0.1,  # Add validation
-    patience=5,      # Early stopping
+    patience=10,      # Early stopping
     verbose=True,
 ):
     """Train MLP with validation and early stopping."""
