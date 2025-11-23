@@ -9,8 +9,8 @@ from contextlib import contextmanager
 # -------------------------------------------------------
 try:
     import kahip
-    KAHIP_AVAILABLE = False  # Force fallback due to Colab compatibility issues
-    print("[graph_utils] KaHIP library found but using fallback partitioner for stability")
+    KAHIP_AVAILABLE = True
+    print("[graph_utils] KaHIP library found ")
 except Exception:
     KAHIP_AVAILABLE = False
     print("[graph_utils] KaHIP not available — using fallback partitioner.")
