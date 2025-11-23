@@ -1,7 +1,6 @@
 #pragma once
 #include <vector>
 #include <cstdint>
-#include <climits>
 #include <cmath>
 #include "../search_method.hpp"
 
@@ -10,7 +9,7 @@ class LSH : public SearchMethod
 public:
     explicit LSH(const Arguments &a, const int &b, const vector<VectorData> &c): SearchMethod(a, b, c){}
     void buildIndex() override;
-    void search(const vector<VectorData> &queries, std::ofstream &out) override;
+    void search(const vector<VectorData> &queries, ofstream &out) override;
 
 private:
     const uint64_t MOD_M = 4294967291ULL; // 2^32 - 5, a large prime
@@ -26,26 +25,18 @@ private:
     // static constexpr uint64_t MOD_M = (1ull << 32) - 5;
     uint64_t keyFor(const vector<float> &v, int li) const;
 
-    // --- diagnostics (only active when LSH_DEBUG=1) ---
-    mutable long long min_h_seen_ = LLONG_MAX;
-    mutable size_t neg_h_count_ = 0;
-    mutable double t_min_ = 1e300;
-    mutable double t_max_ = -1e300;
-
     // Safe modular helpers
-    inline static long long mod_ll(long long a, long long m)
-    {
+    inline static long long mod_ll(long long a, long long m) {
         long long r = a % m;
         return (r < 0) ? r + m : r;
     }
-    inline static uint64_t mod_u64(uint64_t a, uint64_t m)
-    {
+
+    inline static uint64_t mod_u64(uint64_t a, uint64_t m) {
         return (m == 0) ? 0 : (a % m);
     }
 
     // Compute base LSH function h_j(p)
-    inline long long hij(const vector<float> &v, int li, int j) const
-    {
+    inline long long hij(const vector<float> &v, int li, int j) const {
         double dot = 0.0;
         for (int d = 0; d < Dim; ++d)
             dot += a_[li][j][d] * v[d];

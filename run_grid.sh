@@ -103,26 +103,9 @@ parse_metrics() {
   echo "${AF},${RC},${QP},${TA},${TT}"
 }
 
-# Helper: parse LSH diagnostics from STDERR capture
-# Expects a line like:
-# [LSH-DIAG] w=6 t_range=[0.001,5.997] min_h_seen=-123 neg_h_count=42
-parse_lsh_diag() {
-  local errfile="$1"
-  local line
-  line=$(grep -m1 "^\[LSH-DIAG\]" "$errfile" || true)
-  if [[ -z "$line" ]]; then
-    echo ",,,," # empty columns if not found
-    return
-  fi
-  local W=$(echo "$line" | sed -E 's/.*w=([0-9.]+).*/\1/')
-  local TRANGE=$(echo "$line" | sed -E 's/.*t_range=\[([0-9eE\.\+\-]+),([0-9eE\.\+\-]+)\].*/\1,\2/')
-  local MINH=$(echo "$line" | sed -E 's/.*min_h_seen=([-0-9]+).*/\1/')
-  local NEGC=$(echo "$line" | sed -E 's/.*neg_h_count=([0-9]+).*/\1/')
-  echo "${W},${TRANGE},${MINH},${NEGC}"
-}
 
 SUMMARY="${OUTDIR}/summary_${TYPE}_job${JOB_ID}.csv"
-echo "algo,params,AF,Recall,QPS,tApprox,tTrue,w,t_min,t_max,min_h_seen,neg_h_count" > "$SUMMARY"
+echo "algo,params,AF,Recall,QPS,tApprox,tTrue" > "$SUMMARY"
 
 # -----------------------------
 # Work splitting helper
@@ -151,26 +134,11 @@ run_lsh() {
           local tag="lsh_s${seed}_k${k}_L${L}_w${w}"
           local out="${OUTDIR}/${tag}.txt"
           local gt="${OUTDIR}/ground_truth.csv"
-          local err="${OUTDIR}/${tag}.err"
           echo "==> LSH ${tag}"
           "$BIN" -d "$DATA" -q "$QUER" -o "$out" -gt "$gt" -type "$TYPE" \
-            -lsh -k "$k" -L "$L" -w "$w" -N 1 -R "$R_PARAM" -seed "$seed" 2> "$err"
+            -lsh -k "$k" -L "$L" -w "$w" -N 1 -R "$R_PARAM" -seed "$seed"
           local metrics=$(parse_metrics "$out")
-          local diag=$(parse_lsh_diag "$err")
-
-          # Check t-range conforms to [0,w)
-          # Warn if outside (shouldn't happen)
-          IFS=',' read -r _w _tmin _tmax _minh _negc <<< "$diag"
-          if [[ -n "$_tmin" && -n "$_tmax" ]]; then
-            awk -v tmin="$_tmin" -v tmax="$_tmax" -v w="$w" '
-              BEGIN {
-                if (tmin < 0 - 1e-9 || tmax > w + 1e-9) {
-                  printf("WARNING: t outside [0,w): tmin=%.6f tmax=%.6f w=%.6f\n", tmin, tmax, w) > "/dev/stderr";
-                }
-              }' </dev/null
-          fi
-
-          echo "LSH,k=${k};L=${L};w=${w};seed=${seed},${metrics},${diag}" >> "$SUMMARY"
+          echo "LSH,k=${k};L=${L};w=${w};seed=${seed},${metrics}" >> "$SUMMARY"
         done
       done
     done
@@ -197,7 +165,7 @@ run_cube() {
           "$BIN" -d "$DATA" -q "$QUER" -o "$out" -gt "$gt" -type "$TYPE" \
             -hypercube -kproj "$kp" -M "$M" -probes "$pr" -N 1 -R "$R_PARAM" -seed "$seed"
           local metrics=$(parse_metrics "$out")
-          echo "Hypercube,kproj=${kp};M=${M};probes=${pr};seed=${seed},${metrics},,,,,," >> "$SUMMARY"
+          echo "Hypercube,kproj=${kp};M=${M};probes=${pr};seed=${seed},${metrics}" >> "$SUMMARY"
         done
       done
     done
@@ -224,7 +192,7 @@ run_ivfflat() {
         echo "${command[@]}"
         "${command[@]}"
         local metrics=$(parse_metrics "$out")
-        echo "IVFFlat,kclusters=${kc};nprobe=${np};seed=${seed},${metrics},,,,,," >> "$SUMMARY"
+        echo "IVFFlat,kclusters=${kc};nprobe=${np};seed=${seed},${metrics}" >> "$SUMMARY"
       done
     done
   done
@@ -255,7 +223,7 @@ run_ivfpq() {
             echo "${command[@]}"
             "${command[@]}"
             local metrics=$(parse_metrics "$out")
-            echo "IVFPQ,kclusters=${kc};nprobe=${np};M=${Msub};nbits=${nb};seed=${seed},${metrics},,,,,," >> "$SUMMARY"
+            echo "IVFPQ,kclusters=${kc};nprobe=${np};M=${Msub};nbits=${nb};seed=${seed},${metrics}" >> "$SUMMARY"
           done
         done
       done

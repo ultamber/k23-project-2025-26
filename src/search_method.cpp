@@ -171,5 +171,5 @@ void SearchMethod::printSummary(int qCount, ofstream &out){
     out << "Recall@N: " << (TotalRecall / qCount) << "\n";
     out << "QPS: " << (1.0 / (TotalApproximation / qCount)) << "\n";
     out << "tApproximateAverage: " << (TotalApproximation / qCount) << "\n";
-    out << "tTrueAvERAGE: " << (TotalTrue / qCount) << "\n";
+    out << "tTrueAverage: " << (TotalTrue / qCount) << "\n";
 };

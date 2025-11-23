@@ -2,6 +2,7 @@
 #include "arguments.hpp"
 #include "dataset.hpp"
 #include <fstream>
+#include <random>
 #include <utility>
 #include <vector>
 #include <chrono>
@@ -18,7 +19,10 @@ public:
 
 class SearchMethod {
 public:
-    explicit SearchMethod(const Arguments& a, const int b, const vector<VectorData> c) : Args(a), Dim(b), Data(c) {}
+    explicit SearchMethod(const Arguments& a, const int b, const vector<VectorData> c) : Args(a), Dim(b), Data(c) {
+        Dim = Data[0].values.size();
+        rng.seed(Args.seed);
+    }
 
     virtual void buildIndex() = 0;
     virtual void search(const vector<VectorData> &queries, ofstream& out) = 0;
@@ -34,6 +38,7 @@ protected:
     double TotalAF;
     double TotalRecall;
     double QPS;
+    mt19937 rng;
 
     double l2(const vector<float> &a, const vector<float> &b);
 

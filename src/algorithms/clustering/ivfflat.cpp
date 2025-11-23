@@ -6,7 +6,7 @@
 #include <vector>
 
 /**
- * Builds the IVF index ref 47
+ * Builds the IVF index
  * 1) Run Lloyd's on √n subset X' to get centroids
  * 2) Assign ALL points to nearest centroid
  * 3) Build inverted lists
@@ -20,19 +20,21 @@ void IVFFlat::buildIndex()
         Lists.clear();
         return;
     }
-    Dim = Data[0].values.size();
 
-    // slide 47 Run Lloyd's on √n training subset X'
+    // Run Lloyd's on √n training subset X'
     int trainN = min(max(Kclusters, (int)sqrt((double)N)), N);
-    vector<int> idx(trainN);
+    vector<int> idx(N);
+    iota(idx.begin(), idx.end(), 0);
+    shuffle(idx.begin(), idx.end(), rng);
+    idx.resize(trainN);
 
     vector<vector<float>> Ptrain;
     Ptrain.reserve(trainN);
     for (int id : idx)
         Ptrain.push_back(Data[id].values);
-    kmeansWithPP(Ptrain, Kclusters, (unsigned)Args.seed, Centroids);
+    kmeansWithPP(Ptrain, Kclusters, Centroids);
 
-    // slide 47, Assignment phase - assign ALL points (not just training)
+    // Assignment phase - assign ALL points (not just training)
     // to their nearest centroid j* and build inverted lists IL_j
     Lists.assign(Kclusters, {});
     for (int i = 0; i < N; ++i)
@@ -51,14 +53,14 @@ void IVFFlat::buildIndex()
                 best = c;
             }
         }
-        // slide 47, Append (id(x), x) to IL_j*(x)
+        // Append (id(x), x) to IL_j*(x)
         Lists[best].push_back(i);
     }
     SilhouetteScore = calculateSilhouetteScore();
 }
 
 /**
- * Performs IVF search ref 48
+ * Performs IVF search
  * 1) Coarse search: compute ||q - c_j||_2 for all centroids, select top b
  * 2) Fine search: compute distances to candidates in U = ⋃_j belongs to S IL_j
  * 3) Return R nearest
@@ -78,7 +80,7 @@ void IVFFlat::search(const vector<VectorData> &queries, ofstream &out)
         // === Approximate search using IVF ===
         auto t0 = high_resolution_clock::now();
 
-        // slide 48 Coarse search - evaluate all cells
+        // Coarse search - evaluate all cells
         // Compute ||q - c_j||_2 for j = 1, ..., k
         vector<pair<double, int>> centroidDists;
         centroidDists.reserve(Kclusters);
@@ -92,7 +94,7 @@ void IVFFlat::search(const vector<VectorData> &queries, ofstream &out)
                         centroidDists.end());
         sort(centroidDists.begin(), centroidDists.begin() + probeCount);
 
-        // slide 48 Collect candidates from U = ⋃_j∈S IL_j
+        // Collect candidates from U = ⋃_j∈S IL_j
         vector<int> candidates;
         size_t totalSize = 0;
         for (int i = 0; i < probeCount; ++i)
@@ -106,7 +108,7 @@ void IVFFlat::search(const vector<VectorData> &queries, ofstream &out)
             candidates.insert(candidates.end(), IL.begin(), IL.end());
         }
 
-        // slide 48 Compute d(q,x) = ||q - x||_2 for all x ∈ U
+        // Compute d(q,x) = ||q - x||_2 for all x ∈ U
         vector<pair<double, int>> distApprox;
         distApprox.reserve(candidates.size());
         vector<int> rlist; // Range search results
@@ -119,7 +121,7 @@ void IVFFlat::search(const vector<VectorData> &queries, ofstream &out)
                 rlist.push_back(id);
         }
 
-        // slide 48, Return R nearest points from U
+        // Return R nearest points from U
         int keepApprox = min(Args.N, (int)distApprox.size());
         if (keepApprox > 0)
         {
@@ -138,7 +140,7 @@ void IVFFlat::search(const vector<VectorData> &queries, ofstream &out)
 }
 
 /**
- * Silhouette averages ref 45
+ * Silhouette averages
  */
 double IVFFlat::calculateSilhouetteScore()
 {
@@ -237,19 +239,15 @@ double IVFFlat::calculateSilhouetteScore()
 void IVFFlat::kmeansWithPP(
     const vector<vector<float>> &P,
     int k,
-    unsigned seed,
     vector<vector<float>> &centroids
 ) {
 
     int n = P.size();
     centroids.reserve(k);
 
-    mt19937 gen(seed);
-
     // (1) Choose the first centroid uniformly at random
     uniform_int_distribution<int> uni_dist(0, n - 1);
-
-    int first = uni_dist(gen);
+    int first = uni_dist(rng);
     centroids.emplace_back(P[first]);
 
 
@@ -271,7 +269,7 @@ void IVFFlat::kmeansWithPP(
 
         // Choose next centroid with probability proportional to D(i)
         uniform_real_distribution<double> dist_double(0.0, sumD);
-        double rnd = dist_double(gen);
+        double rnd = dist_double(rng);
 
         double cumulative = 0.0;
         int next = 0;

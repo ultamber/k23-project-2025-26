@@ -16,8 +16,9 @@ protected:
     vector<vector<float>> Centroids; // [k][dim]
     vector<vector<int>> Lists;       // [k] -> ids
 
-    void kmeansWithPP(const vector<vector<float>> &P, int k,
-                      unsigned seed,
-                      vector<vector<float>> &centroids);
+    void kmeansWithPP(
+        const vector<vector<float>> &P,
+        int k,
+        vector<vector<float>> &centroids);
     double calculateSilhouetteScore();
 };

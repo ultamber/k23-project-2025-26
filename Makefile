@@ -26,7 +26,7 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
-	rm -rf $(OBJ_DIR) $(BIN_DIR) $(RUN_DIR)/**/*.txt
+	rm -rf $(OBJ_DIR) $(BIN_DIR) $(RUN_DIR)/**/*.txt $(RUN_DIR)/**/*.err
 
 mnist:
 	@$(TARGET) -d ./datasets/MNIST/input.dat \
