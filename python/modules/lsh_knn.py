@@ -159,7 +159,7 @@ def parse_lsh_output(output_file, n, k):
     # Check for incomplete results
     incomplete = np.sum(knn_graph == -1)
     if incomplete > 0:
-        print(f"⚠️  Warning: {incomplete}/{n*k} neighbors not found by LSH")
+        print(f"  Warning: {incomplete}/{n*k} neighbors not found by LSH")
         print(f"   This may happen if LSH couldn't find enough neighbors for some queries")
         print(f"   Consider using --use_exact_knn for more reliable k-NN graph construction")
     

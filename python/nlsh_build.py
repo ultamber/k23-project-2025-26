@@ -47,6 +47,7 @@ def parse_args():
     parser.add_argument("--search_path", default="../bin/search", 
                         help="Path to Project 1 LSH search executable")
     parser.add_argument("--calculated_output",default="")
+    parser.add_argument("--patience",default=25)
     
     # k-NN graph caching
     parser.add_argument("--knn_graph_file", type=str, default=None,
