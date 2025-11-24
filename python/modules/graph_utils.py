@@ -1,31 +1,66 @@
-from sklearn.neighbors import NearestNeighbors
+"""
+Graph utilities for Neural LSH index construction.
+
+This module handles:
+- k-NN graph construction
+- Graph symmetrization with uniform edge weights
+- KaHIP partitioning (optimized for 'strong' configuration)
+- CSR format conversion for METIS
+"""
+
 import numpy as np
-import random
-import signal
-from contextlib import contextmanager
+import subprocess
+import tempfile
+import os
+from sklearn.neighbors import NearestNeighbors
+
 
 # -------------------------------------------------------
-# Try import KaHIP – if it fails, use fallback
+# KaHIP Binary Detection
 # -------------------------------------------------------
-try:
-    import kahip
-    KAHIP_AVAILABLE = True
-    print("[graph_utils] KaHIP library found ")
-except Exception:
-    KAHIP_AVAILABLE = False
-    print("[graph_utils] KaHIP not available — using fallback partitioner.")
+def find_kahip():
+    """Detect KaHIP binary in system PATH."""
+    for exe in ["kaffpa", "kaffpaE"]:
+        try:
+            subprocess.run(
+                [exe, "--help"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=5
+            )
+            print(f"[graph_utils] Found KaHIP binary: {exe}")
+            return exe
+        except Exception:
+            continue
+    print("[graph_utils] KaHIP binaries not found — falling back to simple partitioner.")
+    return None
+
+
+KAHIP_BIN = find_kahip()
+
 
 # -------------------------------------------------------
-# Fallback partitioner
+# Fallback Partitioner
 # -------------------------------------------------------
 def fallback_partition(csr, m):
-    """Simple round-robin partitioning fallback"""
+    """
+    Simple round-robin partitioner when KaHIP is unavailable.
+    
+    Args:
+        csr: Graph in CSR format
+        m: Number of partitions
+        
+    Returns:
+        Partition labels for each vertex
+    """
     n = len(csr["vwgt"])
     labels = np.zeros(n, dtype=np.int32)
+    
+    # Round-robin assignment
     for i in range(n):
         labels[i] = i % m
-    
-    # Calculate edgecut for reporting
+
+    # Compute edgecut
     edgecut = 0
     for i in range(n):
         start = csr["xadj"][i]
@@ -36,136 +71,296 @@ def fallback_partition(csr, m):
             if labels[j] != bi:
                 w = csr["adjcwgt"][idx]
                 edgecut += w
-    edgecut = edgecut // 2
-    
-    print(f"[graph_utils] Fallback partitioner used. m = {m}, edgecut = {edgecut}")
+
+    edgecut //= 2  # Each edge counted twice
+    print(f"[graph_utils] Fallback partitioner used. Edgecut: {edgecut:,}")
     return labels
 
 
-import signal
-from contextlib import contextmanager
-
-class TimeoutException(Exception):
-    pass
-
-@contextmanager
-def time_limit(seconds):
-    def signal_handler(signum, frame):
-        raise TimeoutException("Timed out!")
-    signal.signal(signal.SIGALRM, signal_handler)
-    signal.alarm(seconds)
-    try:
-        yield
-    finally:
-        signal.alarm(0)
-
-
 # -------------------------------------------------------
-# Main KaHIP wrapper function
+# METIS Format Writer
 # -------------------------------------------------------
-def run_kahip(csr, m=100, imbalance=0.03, mode=2, seed=1, timeout=30):
+def write_metis_graph(csr, path):
     """
-    Run KaHIP partitioner or fallback if not available.
+    Write graph in METIS format for KaHIP.
+    
+    Format:
+        <n_vertices> <n_edges> <format_flag>
+        <neighbor1> <weight1> <neighbor2> <weight2> ...
+        ...
     
     Args:
-        csr: Dict with keys 'xadj', 'adjncy', 'adjcwgt', 'vwgt'
-        m: Number of partitions
-        imbalance: Allowed imbalance (default 0.03)
-        mode: KaHIP mode (0=fast, 1=eco, 2=strong)
-        seed: Random seed
-        timeout: Timeout in seconds (default 30)
-    
-    Returns:
-        Array of partition labels (length n)
+        csr: Graph in CSR format
+        path: Output file path
     """
-    if not KAHIP_AVAILABLE:
+    n = len(csr["vwgt"])
+    xadj = csr["xadj"]
+    adjncy = csr["adjncy"]
+    adjcwgt = csr["adjcwgt"]
+
+    # Number of undirected edges
+    n_edges = xadj[-1] // 2
+
+    with open(path, "w") as f:
+        # Header: n_vertices n_edges format_flag
+        # format_flag=1 means edge-weighted graph
+        f.write(f"{n} {n_edges} 1\n")
+
+        # Each line: adjacency list for vertex i
+        for i in range(n):
+            start = xadj[i]
+            end = xadj[i + 1]
+
+            row = []
+            for idx in range(start, end):
+                j = adjncy[idx] + 1  # METIS uses 1-indexed vertices
+                w = adjcwgt[idx]
+                row.append(f"{j} {w}")
+
+            f.write(" ".join(row) + "\n")
+
+
+# -------------------------------------------------------
+# KaHIP Partitioner
+# -------------------------------------------------------
+def run_kahip(csr, m=100, imbalance=0.03, mode=2, seed=1):
+    """
+    Partition graph using KaHIP.
+    
+    Args:
+        csr: Graph in CSR format
+        m: Number of partitions
+        imbalance: Allowed imbalance (0.03 = 3%)
+        mode: Preconfiguration (0=eco, 1=fast, 2=strong)
+        seed: Random seed for reproducibility
+        
+    Returns:
+        Partition labels for each vertex
+    """
+    if KAHIP_BIN is None:
         return fallback_partition(csr, m)
 
-    print("Running KaHIP partitioner…")
-    print(f"  n = {len(csr['vwgt'])}, m = {m}, imbalance = {imbalance}, mode = {mode}")
+    # Map mode to KaHIP preconfiguration
+    mode_map = {
+        0: "eco",
+        1: "fast",
+        2: "strong"
+    }
+    preconfig = mode_map.get(mode, "strong")
 
-    try:
-        # Try with timeout to prevent hanging
-        with time_limit(timeout):
-            # KaHIP expects 9 positional arguments:
-            # 1. vwgt (vertex weights)
-            # 2. xadj (adjacency index pointer)
-            # 3. adjcwgt (edge weights)
-            # 4. adjncy (adjacency list)
-            # 5. nblocks (int)
-            # 6. imbalance (float)
-            # 7. suppress_output (bool)
-            # 8. seed (int)
-            # 9. mode (int)
-            edgecut, blocks = kahip.kaffpa(
-                csr["vwgt"],      # already numpy array
-                csr["xadj"],      # already numpy array
-                csr["adjcwgt"],   # already numpy array
-                csr["adjncy"],    # already numpy array
-                m,                # nblocks (int)
-                imbalance,        # imbalance (float)
-                True,             # suppress_output (bool)
-                seed,             # seed (int)
-                mode              # mode (int)
+    print(f"[KaHIP] Partitioning with '{preconfig}' configuration...")
+    print(f"[KaHIP] Parameters: m={m}, imbalance={imbalance:.2%}, seed={seed}")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        # Write graph to METIS format
+        graph_filename = "graph.graph"
+        graph_path = os.path.join(tmp, graph_filename)
+        write_metis_graph(csr, graph_path)
+
+        # Possible output filenames from KaHIP
+        possible_outputs = [
+            os.path.join(tmp, f"tmppartition{m}"),
+            os.path.join(tmp, f"{graph_filename}.part.k{m}"),
+            os.path.join(tmp, f"graph.part.k{m}"),
+        ]
+
+        # Build KaHIP command
+        cmd = [
+            KAHIP_BIN,
+            graph_filename,
+            f"--k={m}",
+            f"--imbalance={imbalance}",
+            f"--seed={seed}",
+            f"--preconfiguration={preconfig}"
+        ]
+
+        try:
+            # Run KaHIP
+            result = subprocess.run(
+                cmd,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                cwd=tmp,
+                timeout=3600  # 1 hour timeout
             )
-            print(f"✓ KaHIP completed: edgecut = {edgecut}")
+
+            # Parse output for metrics
+            edgecut = None
+            balance = None
+            time_spent = None
+
+            for line in result.stdout.split('\n'):
+                line_lower = line.lower()
+                if 'cut' in line_lower and '=' not in line:
+                    parts = line.split()
+                    for i, part in enumerate(parts):
+                        if 'cut' in part.lower() and i + 1 < len(parts):
+                            try:
+                                edgecut = int(parts[i + 1])
+                            except ValueError:
+                                pass
+                elif 'balance' in line_lower:
+                    parts = line.split()
+                    for i, part in enumerate(parts):
+                        if 'balance' in part.lower() and i + 1 < len(parts):
+                            try:
+                                balance = float(parts[i + 1])
+                            except ValueError:
+                                pass
+                elif 'time spent' in line_lower:
+                    parts = line.split()
+                    for i, part in enumerate(parts):
+                        if part.replace('.', '').isdigit():
+                            try:
+                                time_spent = float(part)
+                            except ValueError:
+                                pass
+
+            # Find partition output file
+            out_path = None
+            for possible_path in possible_outputs:
+                if os.path.exists(possible_path):
+                    out_path = possible_path
+                    break
+
+            if out_path is None:
+                # Try to find any partition file
+                all_files = os.listdir(tmp)
+                part_files = [f for f in all_files if 'partition' in f.lower() or '.part' in f]
+                if part_files:
+                    out_path = os.path.join(tmp, part_files[0])
+                else:
+                    raise FileNotFoundError("KaHIP did not produce partition file")
+
+            # Read partition labels
+            with open(out_path, "r") as f:
+                blocks = [int(line.strip()) for line in f if line.strip()]
+
+            # Validate
+            n_expected = len(csr["vwgt"])
+            n_actual = len(blocks)
+
+            if n_actual != n_expected:
+                raise ValueError(
+                    f"Partition count mismatch: expected {n_expected}, got {n_actual}"
+                )
+
+            # Print results
+            print(f"[KaHIP] ✓ Partitioning completed successfully")
+            if edgecut is not None:
+                print(f"[KaHIP]   Edgecut: {edgecut:,}")
+            if balance is not None:
+                print(f"[KaHIP]   Balance: {balance:.5f}")
+            if time_spent is not None:
+                print(f"[KaHIP]   Time: {time_spent:.2f}s")
+
             return np.array(blocks, dtype=np.int32)
 
-    except TimeoutException:
-        print(f" KaHIP timed out after {timeout} seconds")
-        print("  Switching to fallback partitioner...")
-        return fallback_partition(csr, m)
-    
-    except Exception as e:
-        print(f" KaHIP crashed: {e}")
-        print("  Switching to fallback partitioner...")
-        return fallback_partition(csr, m)
+        except subprocess.TimeoutExpired:
+            print(f"[KaHIP] ✗ Timeout after 1 hour")
+            return fallback_partition(csr, m)
+
+        except subprocess.CalledProcessError as e:
+            print(f"[KaHIP] ✗ Failed with return code {e.returncode}")
+            if e.returncode == -11:
+                print(f"[KaHIP]   Segmentation fault detected")
+            return fallback_partition(csr, m)
+
+        except Exception as e:
+            print(f"[KaHIP] ✗ Error: {e}")
+            return fallback_partition(csr, m)
 
 
+# -------------------------------------------------------
+# k-NN Graph Construction
+# -------------------------------------------------------
 def build_knn_graph(X, k=10):
     """
-    Build k-NN graph.
-    Returns indices: shape (n, k) where indices[i] = k nearest neighbors of X[i].
+    Build k-nearest neighbors graph using sklearn.
+    
+    Args:
+        X: Data matrix (n_samples × n_features)
+        k: Number of neighbors
+        
+    Returns:
+        k-NN indices array (n_samples × k)
     """
-    nn = NearestNeighbors(n_neighbors=k, metric="euclidean", algorithm="auto")
-    nn.fit(X)
-    _, indices = nn.kneighbors(X)
+    nbrs = NearestNeighbors(n_neighbors=k, metric="euclidean", algorithm='auto')
+    nbrs.fit(X)
+    _, indices = nbrs.kneighbors(X)
     return indices
 
 
 def build_symmetric_graph(knn_indices):
     """
-    Build symmetric weighted graph from k-NN indices.
-    Mutual edges get weight 2, one-sided edges get weight 1.
+    Build symmetric graph with mixed edge weights.
+    
+    Assigns weight=2 to reciprocal edges (mutual k-NN neighbors)
+    and weight=1 to non-reciprocal edges (one-way k-NN neighbors).
+    This distinguishes strong bidirectional relationships from
+    weaker unidirectional ones.
+    
+    Args:
+        knn_indices: k-NN indices array (n_samples × k)
+        
+    Returns:
+        Adjacency list where adj[i] = {neighbor: weight, ...}
     """
     n, k = knn_indices.shape
-    adj = [{} for _ in range(n)]  # adjacency as dicts for merging
-
+    
+    # Build set of k-NN relationships for fast reciprocal checking
+    knn_set = [set(knn_indices[i]) for i in range(n)]
+    
+    adj = [dict() for _ in range(n)]
+    
+    reciprocal_count = 0
+    non_reciprocal_count = 0
+    
+    # Add edges with appropriate weights
     for i in range(n):
         for j in knn_indices[i]:
-            # one-sided edge i→j
-            adj[i].setdefault(j, 1)
-
-    # check mutual edges
-    for i in range(n):
-        for j in list(adj[i].keys()):
-            if i in adj[j]:
-                # mutual → upgrade both edges to weight 2
-                adj[i][j] = 2
-                adj[j][i] = 2
+            if j not in adj[i]:  # Haven't processed this edge yet
+                # Check if reciprocal: i→j AND j→i
+                is_reciprocal = i in knn_set[j]
+                weight = 2 if is_reciprocal else 1
+                
+                # Add edge in both directions with same weight
+                adj[i][j] = weight
+                adj[j][i] = weight
+                
+                if is_reciprocal:
+                    reciprocal_count += 1
+                else:
+                    non_reciprocal_count += 1
+    
+    print(f"[graph_utils] Edge weights assigned:")
+    print(f"[graph_utils]   Reciprocal edges: {reciprocal_count:,} (weight=2)")
+    print(f"[graph_utils]   Non-reciprocal edges: {non_reciprocal_count:,} (weight=1)")
+    print(f"[graph_utils]   Total unique edges: {reciprocal_count + non_reciprocal_count:,}")
 
     return adj
 
 
+# -------------------------------------------------------
+# CSR Format Conversion
+# -------------------------------------------------------
 def to_csr(adj):
     """
-    Convert adjacency list to CSR format for KaHIP.
+    Convert adjacency list to CSR (Compressed Sparse Row) format.
+    
+    CSR format used by KaHIP:
+    - xadj[i]: starting index in adjncy for vertex i's neighbors
+    - adjncy: flat array of all neighbors
+    - adjcwgt: flat array of all edge weights
+    - vwgt: vertex weights (all 1 for unweighted vertices)
     
     Args:
-        adj: List of dicts, where adj[i] = {neighbor: weight, ...}
-    
+        adj: Adjacency list
+        
     Returns:
-        Dict with keys: 'xadj', 'adjncy', 'adjcwgt', 'vwgt'
+        Dictionary with CSR arrays
     """
     n = len(adj)
     xadj = [0]
@@ -173,16 +368,15 @@ def to_csr(adj):
     adjcwgt = []
 
     for i in range(n):
-        neighs = adj[i]
-        adjncy.extend(neighs.keys())
-        adjcwgt.extend(neighs.values())
+        neighbors = adj[i]
+        for j, w in neighbors.items():
+            adjncy.append(j)
+            adjcwgt.append(w)
         xadj.append(len(adjncy))
-
-    vwgt = [1] * n  # uniform vertex weights
 
     return {
         "xadj": np.array(xadj, dtype=np.int64),
         "adjncy": np.array(adjncy, dtype=np.int32),
         "adjcwgt": np.array(adjcwgt, dtype=np.int32),
-        "vwgt": np.array(vwgt, dtype=np.int32),
+        "vwgt": np.ones(n, dtype=np.int32)
     }
