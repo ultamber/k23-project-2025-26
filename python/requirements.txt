@@ -7,7 +7,7 @@ torch>=2.0.0
 scikit-learn>=1.0.0
 
 # Graph partitioning
-kahip>=3.14
+kahip>=3.21
 
 # Optional but recommended
 matplotlib>=3.5.0        # For visualizations
