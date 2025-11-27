@@ -30,11 +30,12 @@ def run_build():
         "-d", str(DATASET_DIR/"train-images.idx3-ubyte"),
         "-i", "test_index",
         "-type", "mnist",          # change to sift if testing SIFT
-        "--knn", "5",
-        "-m", "32",
-        "--epochs", "3",
-        "--layers", "2",
-        "--nodes", "64",
+        "--knn", "50",
+        "-m", "500",
+        "--imbalance", "0.03",
+        "--epochs", "50",
+        "--layers", "10",
+        "--nodes", "392",
         "--search_path", SEARCH_BIN
     ]
 
@@ -53,11 +54,11 @@ def run_search():
         sys.executable, SEARCH_SCRIPT,
         "-d", str(DATASET_DIR/"train-images.idx3-ubyte"),
         "-q", "../datasets/MNIST/t10k-images.idx3-ubyte",
-        "-i", "test_index",
+        "-i", "test_default_ivfflat",
         "-o", "test_output.txt",
-        "-type", "mnist",     # or "sift"
-        "-N", "1",
-        "-T", "3",
+        "-type", "mnist",         # change to sift if testing SIFT
+        "-N", "500",
+        "-T", "20",
         "-range", "false"
     ]
 
@@ -87,7 +88,7 @@ def main():
 
     run_build()
     run_search()
-    show_output()
+    # show_output()
 
     print(f"\nTotal pipeline time: {time.time() - start:.2f} sec")
 

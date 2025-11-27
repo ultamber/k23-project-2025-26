@@ -24,8 +24,6 @@ from modules.dataset_parser import load_dataset
 from modules.graph_utils import build_symmetric_graph, to_csr, run_kahip
 from modules.models import MLPClassifier, train_model
 from modules.utils import set_seed, save_index
-from modules.lsh_knn import compute_knn_sklearn
-
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -43,11 +41,13 @@ def parse_args():
     parser.add_argument("--knn", type=int, default=10, 
                         help="Number of neighbors for k-NN graph")
     parser.add_argument("--use_exact_knn", action="store_true",
-                        help="Use exact k-NN (sklearn) instead of LSH (recommended)")
+                        help="Use exact k-NN (sklearn) instead of LSH/HYPERCUBE/IVFFLAT/IVFPQ")
     parser.add_argument("--search_path", default="../bin/search", 
-                        help="Path to Project 1 LSH search executable")
+                        help="Path to Project 1 search executable")
     parser.add_argument("--calculated_output",default="")
-    parser.add_argument("--patience",default=25)
+    parser.add_argument("--method", type=str, default="ivfflat",
+                        choices=["lsh", "hypercube", "ivfflat", "ivfpq"],
+                        help="Method to use for approximate k-NN graph construction")
     
     # k-NN graph caching
     parser.add_argument("--knn_graph_file", type=str, default=None,
@@ -78,6 +78,8 @@ def parse_args():
                         help="Learning rate")
     parser.add_argument("--weight_decay", type=float, default=0.0,
                         help="L2 regularization weight decay")
+    parser.add_argument("--patience", type=int, default=25, 
+                help="Early stopping patience")
     
     # Other parameters
     parser.add_argument("--seed", type=int, default=1, 
@@ -88,7 +90,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def load_or_build_knn_graph(X, args):
+def load_or_build_knn_graph(X, args,index_dir):
     """
     Load k-NN graph from file or build it (and optionally save).
     
@@ -112,39 +114,36 @@ def load_or_build_knn_graph(X, args):
     # Option 2: Build graph
     print(f"\n[STEP 2] Building k-NN graph (k={args.knn})...")
     
-    if args.use_exact_knn:
-        print(f" Using exact k-NN (sklearn - recommended)...")
-        knn_graph = compute_knn_sklearn(X, args.knn)
-        print(f" Exact k-NN graph computed")
-    else:
-        print(f" Using LSH for k-NN graph (slower)...")
-        try:
-            from modules.lsh_knn import compute_knn_lsh
-            knn_graph = compute_knn_lsh(
-                X,
-                args.knn,
-                args.calculated_output,
-                search_path=args.search_path,
-                dtype=args.type
-            )
-            print(f"✓ k-NN graph built successfully")
-            
-        except FileNotFoundError as e:
-            print(f"\n  {e}")
-            print(f"Falling back to exact k-NN (sklearn)...")
-            knn_graph = compute_knn_sklearn(X, args.knn)
-            print(f"✓ Exact k-NN graph computed")
+    print(f" Using algorithm for k-NN graph (default : IVFFLAT)...")
+    try:
+        from modules.lsh_knn import compute_knn_from_project1
+        knn_graph = compute_knn_from_project1(
+            X,
+            args.knn,
+            args.calculated_output,
+            search_path=args.search_path,
+            dtype=args.type,
+            method=args.method
+        )
+        print(f"k-NN graph built successfully")
         
-        except Exception as e:
-            print(f"\n Error building k-NN graph: {e}")
-            print(f"Falling back to exact k-NN (sklearn)...")
-            knn_graph = compute_knn_sklearn(X, args.knn)
+    except FileNotFoundError as e:
+        print(f"\n  {e}")
+        print(f"File not found.Exiting...")
+        exit(1)
     
-    # Option 3: Save graph for later reuse
-    if args.save_knn_graph:
-        print(f" Saving k-NN graph to {args.save_knn_graph}...")
-        np.save(args.save_knn_graph, knn_graph)
-        print(f"k-NN graph saved for reuse")
+    except Exception as e:
+        print(f"\n Error building k-NN graph: {e}")
+        print(f"Exiting...")
+        exit(1)
+
+    print("k-NN graph built successfully")
+
+    # Save k-NN graph for future use
+    knn_graph_file = index_dir / "knn_graph.npy"
+    np.save(knn_graph_file, knn_graph)
+    print(f"  k-NN graph saved to: {knn_graph_file}")
+    print(f"  Shape: {knn_graph.shape}")
     
     return knn_graph
 
@@ -172,7 +171,7 @@ def main():
         X = X[:1000]
     
     n, d = X.shape
-    print(f"✓ Dataset loaded: n={n:,} vectors, d={d} dimensions")
+    print(f"Dataset loaded: n={n:,} vectors, d={d} dimensions")
     print(f"  Data type: {X.dtype}")
     print(f"  Value range: [{X.min():.2f}, {X.max():.2f}]")
     
@@ -184,14 +183,14 @@ def main():
     # ========================================================================
     # STEP 2: Load or Build k-NN Graph
     # ========================================================================
-    knn_graph = load_or_build_knn_graph(X, args)
+    knn_graph = load_or_build_knn_graph(X, args,index_dir)
     
     # ========================================================================
     # STEP 3: Symmetrize Graph with Edge Weights
     # ========================================================================
     print(f"\n[STEP 3] Symmetrizing graph and assigning edge weights...")
     adj = build_symmetric_graph(knn_graph)
-    print(f"✓ Graph symmetrized")
+    print(f"Graph symmetrized")
     
     # Print graph statistics
     total_edges = sum(len(neighbors) for neighbors in adj)
@@ -204,7 +203,7 @@ def main():
     # ========================================================================
     print(f"\n[STEP 4] Converting to CSR format for KaHIP...")
     csr_graph = to_csr(adj)
-    print(f"✓ CSR format created")
+    print(f"CSR format created")
     print(f"  xadj size: {len(csr_graph['xadj'])}")
     print(f"  adjncy size: {len(csr_graph['adjncy'])}")
     
@@ -226,7 +225,7 @@ def main():
     
     # Verify partitioning quality
     unique_labels = np.unique(labels)
-    print(f"✓ Partitioning completed")
+    print(f"Partitioning completed")
     print(f"  Unique partitions: {len(unique_labels)}")
     print(f"  Expected: {args.m}")
     
@@ -254,6 +253,7 @@ def main():
     print(f"  Batch size: {args.batch_size}")
     print(f"  Learning rate: {args.lr}")
     print(f"  Weight decay: {args.weight_decay}")
+    print(f"  Patience: {args.patience}")
     
     model = MLPClassifier(
         d_in=d,
@@ -271,6 +271,7 @@ def main():
         batch_size=args.batch_size,
         lr=args.lr,
         weight_decay=args.weight_decay,
+        patience=args.patience,
         verbose=True
     )
     

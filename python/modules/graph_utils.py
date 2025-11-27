@@ -248,7 +248,7 @@ def run_kahip(csr, m=100, imbalance=0.03, mode=2, seed=1):
                 )
 
             # Print results
-            print(f"[KaHIP] ✓ Partitioning completed successfully")
+            print(f"[KaHIP] Partitioning completed successfully")
             if edgecut is not None:
                 print(f"[KaHIP]   Edgecut: {edgecut:,}")
             if balance is not None:
@@ -296,52 +296,88 @@ def build_knn_graph(X, k=10):
 def build_symmetric_graph(knn_indices):
     """
     Build symmetric graph with mixed edge weights.
-    
-    Assigns weight=2 to reciprocal edges (mutual k-NN neighbors)
-    and weight=1 to non-reciprocal edges (one-way k-NN neighbors).
-    This distinguishes strong bidirectional relationships from
-    weaker unidirectional ones.
-    
-    Args:
-        knn_indices: k-NN indices array (n_samples × k)
-        
-    Returns:
-        Adjacency list where adj[i] = {neighbor: weight, ...}
     """
     n, k = knn_indices.shape
     
-    # Build set of k-NN relationships for fast reciprocal checking
+    # === VALIDATION BLOCK ===
+    print(f"\n[DEBUG] Validating k-NN graph before symmetrization...")
+    print(f"  Shape: {knn_indices.shape}")
+    print(f"  Min index: {knn_indices.min()}")
+    print(f"  Max index: {knn_indices.max()}")
+    print(f"  Expected max: {n-1}")
+    
+    # Check for invalid indices
+    invalid_mask = (knn_indices < 0) | (knn_indices >= n)
+    if invalid_mask.any():
+        n_invalid = invalid_mask.sum()
+        print(f"  ERROR: Found {n_invalid} invalid indices!")
+        print(f"  Invalid indices: {knn_indices[invalid_mask][:10]}...")  # Show first 10
+        raise ValueError("k-NN graph contains invalid indices")
+    
+    # Check for self-loops
+    self_loops = []
+    for i in range(min(n, 100)):  # Check first 100
+        if i in knn_indices[i]:
+            self_loops.append(i)
+    
+    if self_loops:
+        print(f"  WARNING: Found {len(self_loops)} self-loops in first 100 nodes")
+        print(f"  Self-loop nodes: {self_loops[:10]}...")
+    
+    print(f"  ✓ k-NN graph validation passed")
+    # === END VALIDATION BLOCK ===
+    
+    # Build set of k-NN relationships
     knn_set = [set(knn_indices[i]) for i in range(n)]
+    
+    # Remove self-loops from sets
+    for i in range(n):
+        knn_set[i].discard(i)
     
     adj = [dict() for _ in range(n)]
     
     reciprocal_count = 0
     non_reciprocal_count = 0
     
-    # Add edges with appropriate weights
+    # Add edges with weights
     for i in range(n):
         for j in knn_indices[i]:
-            if j not in adj[i]:  # Haven't processed this edge yet
-                # Check if reciprocal: i→j AND j→i
-                is_reciprocal = i in knn_set[j]
-                weight = 2 if is_reciprocal else 1
-                
-                # Add edge in both directions with same weight
-                adj[i][j] = weight
-                adj[j][i] = weight
-                
-                if is_reciprocal:
-                    reciprocal_count += 1
-                else:
-                    non_reciprocal_count += 1
+            j = int(j)
+            
+            # Skip self-loops
+            if j == i:
+                continue
+            
+            # Skip if already processed
+            if j in adj[i]:
+                continue
+            
+            # Check if reciprocal
+            is_reciprocal = i in knn_set[j]
+            weight = 2 if is_reciprocal else 1
+            
+            # Add bidirectional edge
+            adj[i][j] = weight
+            adj[j][i] = weight
+            
+            if is_reciprocal:
+                reciprocal_count += 1
+            else:
+                non_reciprocal_count += 1
     
     print(f"[graph_utils] Edge weights assigned:")
-    print(f"[graph_utils]   Reciprocal edges: {reciprocal_count:,} (weight=2)")
-    print(f"[graph_utils]   Non-reciprocal edges: {non_reciprocal_count:,} (weight=1)")
-    print(f"[graph_utils]   Total unique edges: {reciprocal_count + non_reciprocal_count:,}")
-
+    print(f"  Reciprocal edges: {reciprocal_count:,} (weight=2)")
+    print(f"  Non-reciprocal edges: {non_reciprocal_count:,} (weight=1)")
+    print(f"  Total edges: {reciprocal_count + non_reciprocal_count:,}")
+    
+    # === ADD FINAL GRAPH CHECK ===
+    total_edges = sum(len(neighbors) for neighbors in adj)
+    print(f"  Total edge count: {total_edges:,}")
+    
+    if total_edges == 0:
+        raise ValueError("Graph has NO edges! Cannot partition empty graph.")
+    
     return adj
-
 
 # -------------------------------------------------------
 # CSR Format Conversion
