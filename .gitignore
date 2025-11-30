@@ -2,3 +2,4 @@
 bin
 obj
 runs
+neural_lsh/nlsh_env

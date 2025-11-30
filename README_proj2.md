@@ -46,6 +46,9 @@ Neural LSH builds an index for fast approximate nearest neighbor search by:
 
 ### Setup
 ```bash
+# Move into neural_lsh folder
+cd ./neural_lsh
+
 # Create virtual environment
 python3 -m venv nlsh_env
 source nlsh_env/bin/activate  # On Windows: nlsh_env\Scripts\activate
@@ -77,7 +80,7 @@ datasets/
 
 ## Project Structure
 ```
-python/
+neural_lsh/
 ├── nlsh_build.py              # Index construction
 ├── nlsh_search.py             # Assignment-compliant search
 ├── modules/
@@ -112,8 +115,8 @@ python nlsh_build.py \
 ### Search
 ```bash
 python nlsh_search.py \
-  -d ../datasets/MNIST/train-images.idx3-ubyte \
-  -q ../datasets/MNIST/t10k-images.idx3-ubyte \
+  -d ../datasets/MNIST/input.dat \
+  -q ../datasets/MNIST/query.dat \
   -i ./mnist_index \
   -o ./results.txt \
   -type mnist \
