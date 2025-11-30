@@ -199,7 +199,7 @@ double IVFFlat::calculateSilhouetteScore()
         if (closest_neighbor_centroid != -1) {
             count = 0;
             for (int id : Lists[closest_neighbor_centroid]) {
-                if (id == closest_neighbor_centroid)
+                if (id == i)
                     continue;
                 b_i += l2(xi, Data[id].values);
                 count++;
