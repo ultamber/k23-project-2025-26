@@ -25,7 +25,7 @@ void Hypercube::buildIndex() {
     uniform_int_distribution<uint32_t> uni32(1u, 0xffffffffu); // For f_j hash functions
 
     // Generate d' base LSH functions h_j
-    // Each h_j(p) = floor((a_j · p + t_j) / )
+    // Each h_j(p) = floor((a_j · p + t_j) / w)
     proj_.assign(kproj_, vector<float>(Dim));
     shift_.assign(kproj_, 0.0f);
     for (int j = 0; j < kproj_; ++j) {
