@@ -189,7 +189,7 @@ double IVFFlat::calculateSilhouetteScore()
         for (int c = 0; c < k; c++) {
             if (c == ci || Lists[c].empty()) 
                 continue;
-            double distance = l2(xi, Data[c].values);
+            double distance = l2(xi, Centroids[c]);
             if (distance < closest_neighbor_dist) {
                 closest_neighbor_centroid = c;
                 closest_neighbor_dist = distance;
