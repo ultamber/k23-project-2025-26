@@ -6,12 +6,14 @@
 class IVFPQ : public IVFFlat
 {
 public:
-    explicit IVFPQ(const Arguments &a, const int &b, const vector<VectorData> &c) : IVFFlat(a, b, c) {}
+    explicit IVFPQ(const Arguments &a, const int &b, const vector<VectorData> &c) : IVFFlat(a, b, c) {
+        Ks_ = 1 << a.nbits; // 2^nbits
+    }
     void buildIndex() override;
     void search(const vector<VectorData> &queries, ofstream &out) override;
 
 private:
-    int Ks_ = 1 << Args.nbits;            // 2^nbits
+    int Ks_;            // 2^nbits
     vector<int> subdim_; // size M_
 
     vector<vector<vector<float>>> codebooks_; // [M][Ks][subdim[m]]
