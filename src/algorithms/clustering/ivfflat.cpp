@@ -150,7 +150,7 @@ double IVFFlat::calculateSilhouetteScore()
     int clusterCount = 0;
     vector<int> calculated_silhouettes;
     if (N == 0 || k <= 1)
-        return {};
+        return 0.0;
 
     vector<int> point_id_to_centroid(N, -1);
     for (int c = 0; c < k; ++c) {
