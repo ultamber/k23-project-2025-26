@@ -164,17 +164,8 @@ double IVFFlat::calculateSilhouetteScore()
     for (int i = 0; i < N; ++i) {
         int ci = point_id_to_centroid[i];
 
-        bool already_calculated = false;
-        for (int l : calculated_silhouettes){
-            if (l == ci){
-                already_calculated = true;
-                break;
-            }
-        }
-
-        if (ci < 0 || already_calculated)
+        if (ci < 0)
             continue;
-        calculated_silhouettes.emplace_back(ci);
 
         const auto &xi = Data[i].values;
 
