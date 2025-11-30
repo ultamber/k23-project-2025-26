@@ -3,7 +3,7 @@
 # ============================================================
 
 CXX := g++
-CXXFLAGS := -std=c++17 -O2 -Wall -Iinclude
+CXXFLAGS := -std=c++17 -O3 -Wall -Wextra -Iinclude
 
 SRC_DIR := src
 INC_DIR := include
@@ -12,36 +12,34 @@ BIN_DIR := bin
 RUN_DIR := runs
 
 TARGET := $(BIN_DIR)/search
+SRC_FILES := $(shell find $(SRC_DIR) -name '*.cpp') main.cpp
+OBJ_FILES := $(SRC_FILES:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o)
 
-SRCS := $(wildcard $(SRC_DIR)/*.cpp)
-OBJS := $(SRCS:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o)
+all: $(TARGET)
 
-all: setup $(TARGET)
-
-setup:
-	@mkdir -p $(OBJ_DIR)
+$(TARGET): $(OBJ_FILES)
 	@mkdir -p $(BIN_DIR)
-
-$(TARGET): $(OBJS)
-	$(CXX) $(CXXFLAGS) $^ -o $@
+	$(CXX) $(OBJ_FILES) -o $@
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
+	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-
 clean:
-	rm -rf $(OBJ_DIR) $(BIN_DIR) $(RUN_DIR)
+	rm -rf $(OBJ_DIR) $(BIN_DIR) $(RUN_DIR)/**/*.txt $(RUN_DIR)/**/*.err
 
 mnist:
-	@$(TARGET) -d ./datasets/MNIST/train-images.idx3-ubyte \
-	           -q ./datasets/MNIST/t10k-images.idx3-ubyte \
+	@$(TARGET) -d ./datasets/MNIST/input.dat \
+	           -q ./datasets/MNIST/query.dat \
 	           -o output.txt \
+		   -gt ./datasets/MNIST/ground_truth.csv \
 	           -type mnist -lsh -k 4 -L 10 -w 6 -N 1 -R 2000
 
 sift:
-	@$(TARGET) -d ./datasets/SIFT/sift_learn.fvecs \
-	           -q ./datasets/SIFT/sift_query.fvecs \
+	@$(TARGET) -d ./datasets/SIFT/input.dat \
+	           -q ./datasets/SIFT/query.dat \
 	           -o output.txt \
-	           -type mnist -lsh -k 4 -L 10 -w 6 -N 1 -R 2000
+		   -gt ./datasets/SIFT/ground_truth.csv \
+	           -type mnist -lsh -k 4 -L 10 -w 6 -N 1 -R 2
 
 .PHONY: all setup clean run
