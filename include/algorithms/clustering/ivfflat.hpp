@@ -5,13 +5,18 @@
 class IVFFlat : public SearchMethod
 {
 public:
-    explicit IVFFlat(const Arguments &a, const int &b, const vector<VectorData> &c) : SearchMethod(a, b, c) {}
+    explicit IVFFlat(const Arguments &a, const int &b, const vector<VectorData> &c)
+        : SearchMethod(a, b, c)
+    {
+        Kclusters = Args.kclusters;
+        Nprobe = Args.nprobe;
+    }
     void buildIndex() override;
     void search(const vector<VectorData> &queries, ofstream &out) override;
 
 protected:
-    int Kclusters = Args.kclusters; // kclusters
-    int Nprobe = Args.nprobe;
+    int Kclusters; // kclusters
+    int Nprobe;
     double SilhouetteScore = 0.0;
     vector<vector<float>> Centroids; // [k][dim]
     vector<vector<int>> Lists;       // [k] -> ids
