@@ -35,8 +35,9 @@ def run_build():
         "-m", "500",
         "--imbalance", "0.03",
         "--epochs", "50",
-        "--layers", "10",
-        "--nodes", "392",
+        "--layers", "5",
+        "--nodes", "64",
+        "--calculated_output", "../out_ivfflat.txt",
         "--search_path", SEARCH_BIN
     ]
 
