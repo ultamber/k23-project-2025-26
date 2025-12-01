@@ -28,14 +28,15 @@ def run_build():
     cmd = [
         sys.executable, BUILD_SCRIPT,
         "-d", str(DATASET_DIR/"train-images.idx3-ubyte"),
-        "-i", "test_index",
+        "-i", "test_index_knn25_m100_ep50_layers5_nodes64",
         "-type", "mnist",          # change to sift if testing SIFT
-        "--knn", "50",
-        "-m", "500",
+        "--knn", "25",
+        "-m", "100",
         "--imbalance", "0.03",
         "--epochs", "50",
-        "--layers", "10",
-        "--nodes", "392",
+        "--layers", "5",
+        "--nodes", "64",
+        "--calculated_output", "../out_ivfflat.txt",
         "--search_path", SEARCH_BIN
     ]
 
@@ -54,11 +55,11 @@ def run_search():
         sys.executable, SEARCH_SCRIPT,
         "-d", str(DATASET_DIR/"train-images.idx3-ubyte"),
         "-q", "../datasets/MNIST/t10k-images.idx3-ubyte",
-        "-i", "test_default_ivfflat",
-        "-o", "test_output.txt",
+        "-i", "test_index_knn25_m100_ep50_layers5_nodes64",
+        "-o", "test_output_knn25_m100_ep50_layers5_nodes64.txt",
         "-type", "mnist",         # change to sift if testing SIFT
-        "-N", "500",
-        "-T", "20",
+        "-N", "50",
+        "-T", "10",
         "-range", "false"
     ]
 
