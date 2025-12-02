@@ -3,3 +3,4 @@ bin
 obj
 runs
 neural_lsh/nlsh_env
+neural_lsh/test_runs

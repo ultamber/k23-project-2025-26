@@ -20,6 +20,7 @@ import concurrent.futures
 # =============================================================================
 
 # Your dataset and script paths
+RUNS_DIR = Path("./test_runs")
 DATASET_DIR = Path("../datasets/MNIST")
 BUILD_SCRIPT = "nlsh_build.py" 
 SEARCH_SCRIPT = "nlsh_search.py"
@@ -87,8 +88,8 @@ def run_config(config):
     build_cmd = [
         sys.executable, BUILD_SCRIPT,
         "-d", str(DATASET_DIR/"train-images.idx3-ubyte"),
-        "-i", f"{config['name']}_index",
-        "-type", FIXED_PARAMS["type"],
+        "-i", f"{RUNS_DIR}/{config['name']}_index",
+        "--type", FIXED_PARAMS["type"],
         "--knn", str(config["knn"]),
         "-m", str(config["m"]),
         "--imbalance", FIXED_PARAMS["imbalance"],
@@ -107,7 +108,7 @@ def run_config(config):
         build_time = time.time() - build_start
         print(f"✅ Build: {build_time:.1f}s (rc={build_proc.returncode})")
         # Write build logs
-        with open(f"{config['name']}_build.log", "w", encoding="utf-8") as bf:
+        with open(f"{RUNS_DIR}/{config['name']}_build.log", "w", encoding="utf-8") as bf:
             bf.write(build_proc.stdout or "")
             bf.write("\n--- STDERR ---\n")
             bf.write(build_proc.stderr or "")
@@ -123,8 +124,8 @@ def run_config(config):
         sys.executable, SEARCH_SCRIPT,
         "-d", str(DATASET_DIR/"train-images.idx3-ubyte"),
         "-q", str(DATASET_DIR/"t10k-images.idx3-ubyte"),
-        "-i", f"{config['name']}_index",
-        "-o", f"{config['name']}_results.txt",
+        "-i", f"{RUNS_DIR}/{config['name']}_index",
+        "-o", f"{RUNS_DIR}/{config['name']}_results.txt",
         "-type", FIXED_PARAMS["type"],
         "-N", str(config["N"]),
         "-T", str(config["T"]),
@@ -139,7 +140,7 @@ def run_config(config):
         search_time = time.time() - search_start
         print(f"✅ Search: {search_time:.1f}s (rc={search_proc.returncode})")
         # Write search logs
-        with open(f"{config['name']}_search.log", "w", encoding="utf-8") as sf:
+        with open(f"{RUNS_DIR}/{config['name']}_search.log", "w", encoding="utf-8") as sf:
             sf.write(search_proc.stdout or "")
             sf.write("\n--- STDERR ---\n")
             sf.write(search_proc.stderr or "")
