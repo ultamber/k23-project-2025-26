@@ -128,7 +128,8 @@ def run_config(config):
         "-type", FIXED_PARAMS["type"],
         "-N", str(config["N"]),
         "-T", str(config["T"]),
-        "-range", "false"
+        "-range", "false",
+        "--max-queries", "1000"  # Limit to first 1000 queries for testing
     ]
     
     print("🔍 Running search...")

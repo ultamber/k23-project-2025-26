@@ -35,6 +35,7 @@ def parse_args():
     p.add_argument("-range", type=str, default="true", help="Range search (true/false)")
     
     p.add_argument("--seed", type=int, default=1, help="Random seed")
+    p.add_argument("--max-queries", type=int, default=None, help="Limit number of queries to process (use first N queries)")
 
     return p.parse_args()
 
@@ -162,6 +163,9 @@ def main():
     # Load queries
     print(f"\nLoading queries from {args.q}...")
     X_query = load_dataset(args.q, args.type)
+    # Optionally limit number of queries to process (useful for tests)
+    if args.max_queries is not None:
+        X_query = X_query[: args.max_queries]
     n_queries = len(X_query)
     print(f"Queries loaded: {n_queries:,}")
 
