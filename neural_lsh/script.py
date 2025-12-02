@@ -13,7 +13,8 @@ from pathlib import Path
 import sys
 
 # Change paths if needed
-DATASET_DIR = Path("../datasets/MNIST")   # or SIFT
+TYPE = "MNIST"
+DATASET_DIR = Path(f"../datasets/{TYPE}")   # or SIFT
 BUILD_SCRIPT = "nlsh_build.py"
 SEARCH_SCRIPT = "nlsh_search.py"
 SEARCH_BIN = "../bin/search"              # Project 1 executable
@@ -27,9 +28,9 @@ def run_build():
 
     cmd = [
         sys.executable, BUILD_SCRIPT,
-        "-d", str(DATASET_DIR/"train-images.idx3-ubyte"),
+        "-d", str(DATASET_DIR/"input.dat"),
         "-i", "test_index",
-        "-type", "mnist",          # change to sift if testing SIFT
+        "--type", str(TYPE).lower(),         # change to sift if testing SIFT
         "--knn", "50",
         "-m", "500",
         "--imbalance", "0.03",
@@ -52,12 +53,12 @@ def run_search():
 
     cmd = [
         sys.executable, SEARCH_SCRIPT,
-        "-d", str(DATASET_DIR/"train-images.idx3-ubyte"),
-        "-q", "../datasets/MNIST/t10k-images.idx3-ubyte",
-        "-i", "test_default_ivfflat",
+        "-d", str(DATASET_DIR/"input.dat"),
+        "-q", str(DATASET_DIR/"query.dat"),
+        "-i", "test_index",
         "-o", "test_output.txt",
-        "-type", "mnist",         # change to sift if testing SIFT
-        "-N", "500",
+        "-type", str(TYPE).lower(),         # change to sift if testing SIFT
+        "-N", "1",
         "-T", "20",
         "-range", "false"
     ]
