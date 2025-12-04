@@ -7,3 +7,5 @@ neural_lsh/test_runs
 python/venv/
 neural_lsh/sweep_experiments/
 results_to_save/
+python/modules/__pycache__/
+neural_lsh/modules/__pycache__/
