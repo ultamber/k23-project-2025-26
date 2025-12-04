@@ -13,7 +13,8 @@ from pathlib import Path
 import sys
 
 # Change paths if needed
-DATASET_DIR = Path("../datasets/MNIST")   # or SIFT
+TYPE = "MNIST"
+DATASET_DIR = Path(f"../datasets/{TYPE}")   # or SIFT
 BUILD_SCRIPT = "nlsh_build.py"
 SEARCH_SCRIPT = "nlsh_search.py"
 import argparse

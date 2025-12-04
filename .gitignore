@@ -3,3 +3,7 @@ bin
 obj
 runs
 neural_lsh/nlsh_env
+neural_lsh/test_runs
+python/venv/
+neural_lsh/sweep_experiments/
+results_to_save/

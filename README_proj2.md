@@ -99,7 +99,7 @@ neural_lsh/
 ### Build Index (MNIST)
 ```bash
 python nlsh_build.py \
-  -d ../datasets/MNIST/train-images.idx3-ubyte \
+  -d ../datasets/MNIST/input.dat \
   -i ./mnist_index \
   -type mnist \
   --knn 15 \

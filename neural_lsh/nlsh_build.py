@@ -32,9 +32,9 @@ def parse_args():
     )
 
     # Required arguments
-    parser.add_argument("-d", required=True, help="Dataset file path (.dat, .idx3-ubyte, .fvecs)")
-    parser.add_argument("-i", required=True, help="Output index directory")
-    parser.add_argument("-type", required=True, choices=["sift", "mnist"],
+    parser.add_argument("-d" , "--dataset_file", required=True, help="Dataset file path (.dat, .idx3-ubyte, .fvecs)")
+    parser.add_argument("-i", "--index_file", required=True, help="Output index directory")
+    parser.add_argument("-t", "--type", required=True, choices=["sift", "mnist"],
                         help="Dataset type")
     
     # k-NN graph parameters
@@ -123,6 +123,8 @@ def load_or_build_knn_graph(X, args,index_dir):
             args.calculated_output,
             search_path=args.search_path,
             dtype=args.type,
+            dataset_path=args.dataset_file,
+            query_path=args.dataset_file,
             method=args.method
         )
         print(f"k-NN graph built successfully")
@@ -153,18 +155,18 @@ def main():
     set_seed(args.seed)
 
     # Create index directory
-    index_dir = Path(args.i)
+    index_dir = Path(args.index_file)
     index_dir.mkdir(parents=True, exist_ok=True)
 
     print("\n" + "="*70)
     print(" NEURAL LSH INDEX CONSTRUCTION")
     print("="*70)
-    
+
     # ========================================================================
     # STEP 1: Load Dataset
     # ========================================================================
-    print(f"\n[STEP 1] Loading dataset from {args.d}...")
-    X = load_dataset(args.d, args.type)
+    print(f"\n[STEP 1] Loading dataset from {args.dataset_file}...")
+    X = load_dataset(args.dataset_file, args.type)
     
     if args.debug:
         print(f"\n  DEBUG MODE: Using subset of 1000 vectors")
