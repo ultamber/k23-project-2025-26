@@ -4,7 +4,7 @@ Implementation of Neural LSH for approximate nearest neighbor search, combining 
 
 ---
 
-##  Table of Contents
+## Table of Contents
 
 - [Overview](#overview)
 - [Installation](#installation)
@@ -19,7 +19,7 @@ Implementation of Neural LSH for approximate nearest neighbor search, combining 
 
 ---
 
-##  Overview
+## Overview
 
 Neural LSH builds an index for fast approximate nearest neighbor search by:
 
@@ -30,9 +30,9 @@ Neural LSH builds an index for fast approximate nearest neighbor search by:
 
 ### Key Features
 
- ~ Supports MNIST and SIFT datasets  
+~ Supports MNIST and SIFT datasets  
  ~ Configurable MLP architecture (layers, nodes, dropout)  
- ~ Early stopping with validation split  
+ ~ Early stopping with validation split
 
 ---
 
@@ -45,6 +45,7 @@ Neural LSH builds an index for fast approximate nearest neighbor search by:
 - Project 1 search executable (`../bin/search`)
 
 ### Setup
+
 ```bash
 # Move into neural_lsh folder
 cd ./neural_lsh
@@ -58,6 +59,7 @@ pip install -r requirements.txt
 ```
 
 ### requirements.txt
+
 ```
 torch>=2.0.0
 numpy>=1.24.0
@@ -66,6 +68,7 @@ kahip>=3.16
 ```
 
 ### Dataset Structure
+
 ```
 datasets/
 ├── MNIST/
@@ -79,6 +82,7 @@ datasets/
 ---
 
 ## Project Structure
+
 ```
 neural_lsh/
 ├── nlsh_build.py              # Index construction
@@ -97,6 +101,7 @@ neural_lsh/
 ## Quick Start
 
 ### Build Index (MNIST)
+
 ```bash
 python nlsh_build.py \
   -d ../datasets/MNIST/input.dat \
@@ -113,6 +118,7 @@ python nlsh_build.py \
 ```
 
 ### Search
+
 ```bash
 python nlsh_search.py \
   -d ../datasets/MNIST/input.dat \
@@ -129,6 +135,7 @@ python nlsh_search.py \
 ## Detailed Usage
 
 ### Building an Index
+
 ```bash
 python nlsh_build.py [OPTIONS]
 
@@ -161,6 +168,7 @@ MLP Training Options:
 ### Searching
 
 #### Assignment-Compliant Search (Required for Grading)
+
 ```bash
 python nlsh_search.py [OPTIONS]
 
@@ -179,6 +187,7 @@ Optional Arguments:
 ```
 
 **Output format:**
+
 ```
 
 ```
@@ -189,20 +198,20 @@ Optional Arguments:
 
 ### Build Phase
 
-| Parameter | Effect | Recommended |
-|-----------|--------|-------------|
-| `--knn` | Graph connectivity | 10-20 |
-| `-m` | Number of bins | 50-200 |
-| `--layers` | MLP depth | 2-4 |
-| `--nodes` | MLP width | 32-128 |
-| `--epochs` | Training iterations | 30-100 |
+| Parameter  | Effect              | Recommended |
+| ---------- | ------------------- | ----------- |
+| `--knn`    | Graph connectivity  | 10-20       |
+| `-m`       | Number of bins      | 50-200      |
+| `--layers` | MLP depth           | 2-4         |
+| `--nodes`  | MLP width           | 32-128      |
+| `--epochs` | Training iterations | 30-100      |
 
 ### Search Phase
 
-| Parameter | Effect | Recommended |
-|-----------|--------|-------------|
-| `-N` | Neighbors to return | 1-100 |
-| `-T` | Bins to probe | 1-10 |
+| Parameter | Effect              | Recommended |
+| --------- | ------------------- | ----------- |
+| `-N`      | Neighbors to return | 1-100       |
+| `-T`      | Bins to probe       | 1-10        |
 
 **Trade-off:** Higher T = better recall, slower search
 
@@ -211,6 +220,7 @@ Optional Arguments:
 ## Implementation Details
 
 ### Algorithm Flow
+
 ```
 BUILD PHASE:
 1. Load training data (60k MNIST or 1M SIFT)
@@ -237,6 +247,7 @@ SEARCH PHASE:
 ```
 
 ### MLP Architecture
+
 ```
 Input Layer:       d dimensions (784 for MNIST, 128 for SIFT)
                    ↓
@@ -260,6 +271,7 @@ Logits:           m classes (bin probabilities via softmax)
 ### Graph Construction
 
 **Symmetrization rules:**
+
 ```python
 if i in knn[j] and j in knn[i]:
     edge(i,j) = 2  # Reciprocal
@@ -325,18 +337,18 @@ tTrueAverage: 0.288515
 
 ### MNIST (60k train, 10k test)
 
-| Config | Recall@10 | QPS | Build Time |
-|--------|-----------|-----|------------|
-| m=50, T=3, k=10 | ~70% | ~100 | 15 min |
-| m=100, T=5, k=15 | ~85% | ~50 | 25 min |
-| m=200, T=7, k=20 | ~92% | ~30 | 40 min |
+| Config           | Recall@10 | QPS  | Build Time |
+| ---------------- | --------- | ---- | ---------- |
+| m=50, T=3, k=10  | ~70%      | ~100 | 15 min     |
+| m=100, T=5, k=15 | ~85%      | ~50  | 25 min     |
+| m=200, T=7, k=20 | ~92%      | ~30  | 40 min     |
 
 ### SIFT (1M base, 10k query)
 
-| Config | Recall@10 | QPS | Build Time |
-|--------|-----------|-----|------------|
-| m=100, T=5, k=15 | ~75% | ~20 | 2 hours |
-| m=200, T=7, k=20 | ~88% | ~15 | 4 hours |
+| Config           | Recall@10 | QPS | Build Time |
+| ---------------- | --------- | --- | ---------- |
+| m=100, T=5, k=15 | ~75%      | ~20 | 2 hours    |
+| m=200, T=7, k=20 | ~88%      | ~15 | 4 hours    |
 
 ---
 
@@ -349,6 +361,7 @@ tTrueAverage: 0.288515
 ## Acknowledgments
 
 Implementation based on:
+
 - Dong et al. "Scalable k-NN graph construction for visual descriptors"
 - KaHIP: Karlsruhe High Quality Partitioning
 - PyTorch: Deep learning framework
