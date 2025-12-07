@@ -75,14 +75,14 @@ def train_model(
     n = len(X)
     n_val = int(n * val_split)
     n_train = n - n_val
-    
+
     indices = torch.randperm(n)
     train_idx = indices[:n_train]
     val_idx = indices[n_train:]
-    
+
     X_train, y_train = X[train_idx], y[train_idx]
     X_val, y_val = X[val_idx], y[val_idx]
-    
+
     train_dataset = TensorDataset(X_train, y_train)
     train_loader = DataLoader(
         train_dataset,
@@ -131,7 +131,7 @@ def train_model(
         with torch.no_grad():
             X_val_gpu = X_val.to(device)
             y_val_gpu = y_val.to(device)
-            
+
             val_logits = model(X_val_gpu)
             val_loss = loss_fn(val_logits, y_val_gpu).item()
             val_preds = torch.argmax(val_logits, dim=1)

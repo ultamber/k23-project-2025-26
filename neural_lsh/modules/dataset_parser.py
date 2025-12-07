@@ -15,7 +15,7 @@ def load_mnist(path):
 
         data = np.frombuffer(f.read(n_images * dim), dtype=np.uint8)
 
-    # Μετατροπή σε float32
+    # Convert data to float32
     X = data.reshape(n_images, dim).astype(np.float32)
 
     return X

@@ -33,7 +33,7 @@ def parse_args():
     p.add_argument("-R", type=float, default=None, help="Search radius")
     p.add_argument("-T", type=int, default=5, help="Number of bins to probe")
     p.add_argument("-range", type=str, default="true", help="Range search (true/false)")
-    
+
     p.add_argument("--seed", type=int, default=1, help="Random seed")
     p.add_argument("--max-queries", type=int, default=None, help="Limit number of queries to process (use first N queries)")
 
@@ -92,37 +92,37 @@ def neural_lsh_search(q, model, inverted, X_data, T, N, device):
     with torch.no_grad():
         logits = model(qt)
         probs = torch.softmax(logits, dim=1).cpu().numpy()[0]
-    
+
     # Step 2: Select top-T bins
     top_bins = np.argsort(-probs)[:T]
-    
+
     # Step 3: Collect candidates
     candidates = []
     for b in top_bins:
         b = int(b)
         if b in inverted:
             candidates.extend(inverted[b])
-    
+
     if len(candidates) == 0:
     # Return random sample or empty
         candidates = np.random.choice(len(X_data), min(N*10, len(X_data)), replace=False).tolist()
-    
+
     candidates = list(set(candidates))  # Remove duplicates
-    
+
     # Step 4: Compute distances to candidates
     candidate_vectors = X_data[candidates]
     distances = np.linalg.norm(candidate_vectors - q, axis=1)
-    
+
     # Step 5: Find top-N
     if len(distances) >= N:
         top_idx = np.argpartition(distances, N-1)[:N]
         top_idx = top_idx[np.argsort(distances[top_idx])]
     else:
         top_idx = np.argsort(distances)
-    
+
     result_indices = [candidates[i] for i in top_idx[:N]]
     result_distances = distances[top_idx[:N]]
-    
+
     return result_indices, result_distances
 
 
@@ -152,14 +152,14 @@ def main():
     print("="*70)
     print("NEURAL LSH SEARCH")
     print("="*70)
-    
+
     # Load index
     print(f"\nLoading index from {args.i}...")
     model, inverted, X_data, meta = load_index(args.i)
     n_data = len(X_data)
     m = meta["m"]
     print(f"Index loaded: n={n_data:,}, m={m}")
-    
+
     # Load queries
     print(f"\nLoading queries from {args.q}...")
     X_query = load_dataset(args.q, args.type)
@@ -174,45 +174,45 @@ def main():
 
     # Search
     print(f"\nSearching (N={args.N}, T={args.T}, R={args.R})...")
-    
+
     sum_af = 0.0
     sum_recall = 0.0
     sum_time_approx = 0.0
     sum_time_true = 0.0
-    
+
     results = []
-    
+
     for q_id in range(n_queries):
         q = X_query[q_id]
-        
+
         # Approximate search
         t_start = time.time()
         approx_indices, approx_distances = neural_lsh_search(
             q, model, inverted, X_data, args.T, args.N, device
         )
         t_approx = time.time() - t_start
-        
+
         # True search (brute-force)
         t_start = time.time()
         true_indices, true_distances = brute_force_search(q, X_data, args.N)
         t_true = time.time() - t_start
-        
+
         # Compute metrics
         af = compute_af(approx_distances[0], true_distances[0])
         recall = compute_recall(approx_indices, true_indices)
-        
+
         sum_af += af
         sum_recall += recall
         sum_time_approx += t_approx
         sum_time_true += t_true
-        
+
         # Range search
         r_neighbors = []
         if do_range:
             for idx, dist in zip(approx_indices, approx_distances):
                 if dist <= args.R:
                     r_neighbors.append(idx)
-        
+
         results.append({
             'query_id': q_id,
             'approx_indices': approx_indices,
@@ -220,17 +220,17 @@ def main():
             'true_distances': true_distances,
             'r_neighbors': r_neighbors
         })
-        
+
         if (q_id + 1) % 100 == 0:
             print(f"  Processed {q_id + 1}/{n_queries} queries...")
-    
+
     # Compute averages
     avg_af = sum_af / n_queries
     avg_recall = sum_recall / n_queries
     avg_time_approx = sum_time_approx / n_queries
     avg_time_true = sum_time_true / n_queries
     qps = 1.0 / avg_time_approx if avg_time_approx > 0 else 0
-    
+
     print(f"Search completed")
     print(f"  Recall@{args.N}: {avg_recall*100:.2f}%")
     print(f"  Average AF: {avg_af:.4f}")
@@ -238,29 +238,29 @@ def main():
 
     # Write output
     print(f"\nWriting results to {args.o}...")
-    
+
     with open(args.o, "w") as fout:
         fout.write("Neural LSH\n\n")
-        
+
         for res in results:
             fout.write(f"Query: {res['query_id']}\n")
-            
+
             for k in range(min(args.N, len(res['approx_indices']))):
                 idx = res['approx_indices'][k]
                 dist_approx = res['approx_distances'][k]
                 dist_true = res['true_distances'][k]
-                
+
                 fout.write(f"Nearest neighbor-{k+1}: {idx}\n")
                 fout.write(f"distanceApproximate: {dist_approx:.6f}\n")
                 fout.write(f"distanceTrue: {dist_true:.6f}\n")
-            
+
             if do_range:
                 fout.write("R-near neighbors:\n")
                 for idx in res['r_neighbors']:
                     fout.write(f"{idx}\n")
-            
+
             fout.write("\n")
-        
+
         # Summary metrics (required by assignment)
         fout.write(f"Average AF: {avg_af:.6f}\n")
         fout.write(f"Recall@{args.N}: {avg_recall:.6f}\n")
