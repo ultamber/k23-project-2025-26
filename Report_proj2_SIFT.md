@@ -1,197 +1,158 @@
-# SIFT Approximate Nearest Neighbor Search: Experimental Report
+# Συγκριτική Αναφορά  
+## Κλασικοί ANN Αλγόριθμοι (LSH, Hypercube, IVFFlat, IVFPQ)  
+### vs  
+## Neural-LSH / Graph-Based ANN (KNN-25 & KNN-50)
 
----
+# 1. Εισαγωγή
 
-## Executive Summary
+Στόχος είναι η άμεση σύγκριση δύο κατηγοριών αλγορίθμων Approximate Nearest Neighbor (ANN) για SIFT dataset:
 
-This report analyzes 24 experiments on the SIFT dataset, comparing two graph structures (KNN=25 vs KNN=50) for approximate nearest neighbor search. Using optimal hyperparameters identified from MNIST experiments, we evaluate the recall-throughput trade-off on this more challenging, higher-dimensional dataset.
+## A. Κλασικές ANN δομές
+- LSH
+- Hypercube
+- IVFFlat
+- IVFPQ
 
-**Key Findings:**
+## B. Neural-LSH style / Graph-based ANN
+- Βασισμένοι σε KNN γραφήματα (25 και 50 neighbors)
+- Εκπαιδευόμενοι με νευρωνικό μοντέλο
+- Παράμετροι: lr, wd, dropout, batch size, layers, m, T
 
-1. **Higher throughput:** SIFT achieves ~4× higher QPS than MNIST across all configurations
-2. **Similar recall patterns:** Both datasets show identical recall behavior — perfect recall with m=50, T≥50
-3. **Lower speedup:** The approximate method provides less speedup over exact search on SIFT
-4. **Harder dataset:** SIFT shows marginally lower recall at intermediate T values compared to MNIST
+Οι δύο κατηγορίες έχουν διαφορετική φιλοσοφία:  
+οι κλασικοί αλγόριθμοι χρησιμοποιούν στατικές δομές ευρετηρίων (inverted index files), ενώ οι neural-LSH μέθοδοι επιτυγχάνουν υψηλή απόδοση μέσω εκπαίδευσης και γραφοβασισμένης αναζήτησης με νευρωνικά μοντέλα.
 
----
+# 2. Συνοπτική Εικόνα Επιδόσεων
 
-## 1. Experimental Setup
+## 2.1 Ταχύτητα (QPS)
 
-### 1.1 Configuration
+| Αλγόριθμος | Τυπικό Εύρος QPS |
+|-----------|------------------|
+| LSH | 10 – 9000 |
+| Hypercube | 600 – 1300 |
+| IVFPQ | 300 – 700 |
+| IVFFlat | 9 – 16 |
+| Neural-LSH (KNN graphs) | 3.2 – 15 |
 
-All experiments use the optimal hyperparameters identified from MNIST:
+Συμπέρασμα:  
+Οι neural-LSH μέθοδοι είναι σημαντικά πιο αργές από hashing ή quantization μεθόδους, και συγκρίσιμες μόνο με IVFFlat. Αυτό εξηγείται από το ότι τα μοντέλα χρησιμοποιούν αποτελέσματα του αλγορίθμου IVFFLAT.
 
-| Parameter     | Value |
-| ------------- | ----- |
-| Learning Rate | 0.01  |
-| Weight Decay  | 0.001 |
-| Dropout       | 0.5   |
-| Batch Size    | 256   |
-| Layers        | 4     |
-| Nodes         | 512   |
-| Epochs        | 50    |
+## 2.2 Ακρίβεια (Recall @5)
 
-### 1.2 Variable Parameters
+| Αλγόριθμος | Μέγιστο Recall |
+|-----------|----------------|
+| LSH | 0.99 |
+| Hypercube | ~0.23 |
+| IVFPQ | 0.99 |
+| IVFFlat | 1.00 |
+| Neural-LSH (KNN-25 / KNN-50) | 1.00 |
 
-| Parameter             | Values          |
-| --------------------- | --------------- |
-| Graph Structure (KNN) | 25, 50          |
-| Candidate Pool (m)    | 50, 100, 200    |
-| Search Iterations (T) | 30, 50, 75, 100 |
+Συμπέρασμα:  
+Οι neural-LSH αλγόριθμοι είναι από τους ελάχιστους που επιτυγχάνουν θεωρητικά τέλεια ακρίβεια (1.0), όπως και το IVFFlat.
 
----
+## 2.3 Trade-off Ακρίβειας – Ταχύτητας
 
-## 2. Results: KNN=25 Graph Structure
+| Αλγόριθμος | Ισορροπία Ακρίβειας / QPS |
+|-----------|----------------------------|
+| LSH | Μεγάλη ταχύτητα, ασταθές recall |
+| Hypercube | Σταθερό QPS, χαμηλό recall |
+| IVFPQ | Καλύτερο trade-off |
+| IVFFlat | Υψηλή ακρίβεια, χαμηλό QPS |
+| Neural-LSH | Υψηλή ακρίβεια, χαμηλό QPS |
 
-### 2.1 Recall@5 Matrix
+Συμπέρασμα:  
+Οι neural-LSH είναι precision-oriented όπως το IVFFlat, όχι speed-oriented όπως IVFPQ.
 
-| m \ T   | 30    | 50        | 75        | 100       |
-| ------- | ----- | --------- | --------- | --------- |
-| **50**  | 0.551 | **1.000** | **1.000** | **1.000** |
-| **100** | 0.298 | 0.556     | 0.773     | **1.000** |
-| **200** | 0.177 | 0.260     | 0.409     | 0.507     |
+# 3. Αναλυτική Σύγκριση
 
-### 2.2 QPS (Queries Per Second) Matrix
+## 3.1 LSH vs Neural-LSH
 
-| m \ T   | 30    | 50    | 75    | 100   |
-| ------- | ----- | ----- | ----- | ----- |
-| **50**  | 24.65 | 13.80 | 13.02 | 14.52 |
-| **100** | 43.97 | 33.19 | 22.01 | 16.13 |
-| **200** | 79.09 | 57.34 | 44.23 | 31.81 |
+| Παράμετρος | LSH | Neural-LSH |
+|------------|-----|------------|
+| Ακρίβεια | 0.02–0.99 | 1.0 |
+| Ταχύτητα | Πολύ υψηλή | Χαμηλή (3–4 QPS) |
+| Τύπος | Hash-based | Learned embeddings + graph |
+| Ευαισθησία παραμέτρων | Υψηλή | Χαμηλότερη |
 
-### 2.3 Speedup vs Exact Search
+Συμπέρασμα:  
+Το Neural-LSH υπερέχει σε ακρίβεια. Το LSH είναι πολύ ταχύτερο.
 
-| m \ T   | 30    | 50    | 75    | 100   |
-| ------- | ----- | ----- | ----- | ----- |
-| **50**  | 0.99× | 0.57× | 0.56× | 0.54× |
-| **100** | 1.71× | 1.21× | 0.76× | 0.57× |
-| **200** | 2.77× | 2.07× | 1.58× | 1.17× |
+## 3.2 Hypercube vs Neural-LSH
 
----
+| Παράμετρος | Hypercube | Neural-LSH |
+|------------|-----------|-------------|
+| Recall | Χαμηλό | 1.0 |
+| QPS | 600–1300 | 3–4 |
+| Κλιμάκωση | Καλή | Μέτρια |
+| Καταλληλότητα | Real-time | Offline/accuracy-first |
 
-## 3. Results: KNN=50 Graph Structure
+Συμπέρασμα:  
+Το Neural-LSH υπερέχει σε ακρίβεια. Το HyperCube είναι πολύ ταχύτερο.
 
-### 3.1 Recall@5 Matrix
+## 3.3 IVFFlat vs Neural-LSH
 
-| m \ T   | 30    | 50        | 75        | 100       |
-| ------- | ----- | --------- | --------- | --------- |
-| **50**  | 0.636 | **1.000** | **1.000** | **1.000** |
-| **100** | 0.332 | 0.517     | 0.772     | **1.000** |
-| **200** | 0.145 | 0.247     | 0.355     | 0.475     |
+| Παράμετρος | IVFFlat | Neural-LSH |
+|------------|---------|-------------|
+| Recall | 0.98–1.00 | 1.00 |
+| QPS | 9–16 | 3–4 |
+| Trade-off | Ακρίβεια με χαμηλή ταχύτητα | Τέλεια ακρίβεια με ακόμη χαμηλότερη ταχύτητα |
 
-### 3.2 QPS Matrix
+Συμπέρασμα:  
+Μοιάζουν ως προς την προτεραιότητα στην ακρίβεια, καθώς το μοντέλο στηρίζεται στο γράφο που παράγεται από τον IVFFLAT, αλλά ο Neural-LSH δίνει σταθερά καλύτερο recall.
 
-| m \ T   | 30    | 50    | 75    | 100   |
-| ------- | ----- | ----- | ----- | ----- |
-| **50**  | 20.88 | 12.07 | 12.25 | 12.62 |
-| **100** | 41.80 | 29.60 | 20.36 | 14.39 |
-| **200** | 65.25 | 48.28 | 40.31 | 32.50 |
+## 3.4 IVFPQ vs Neural-LSH
 
-### 3.3 Speedup vs Exact Search
+| Παράμετρος | IVFPQ | Neural-LSH |
+|------------|--------|------------|
+| Recall | 0.97–0.99 | 1.00 |
+| QPS | 300–700 | 3–4 |
+| Trade-off | Βέλτιστο κλασικό | Ακρίβεια-first |
+| Καταλληλότητα | Large-scale, high-throughput | Perfect recall, offline |
 
-| m \ T   | 30    | 50    | 75    | 100   |
-| ------- | ----- | ----- | ----- | ----- |
-| **50**  | 1.00× | 0.56× | 0.57× | 0.59× |
-| **100** | 1.80× | 1.18× | 0.77× | 0.55× |
-| **200** | 2.61× | 2.06× | 1.48× | 1.17× |
+Συμπέρασμα:  
+Ο IVFPQ είναι ο πιο πρακτικός αλγόριθμος για παραγωγικά συστήματα, αλλά δεν επιτυγχάνει τόσο υψηλή ακρίβεια.
 
----
+# 4. Πλεονεκτήματα και Μειονεκτήματα
 
-## 4. KNN=25 vs KNN=50 Comparison
+## Neural-LSH (Graph-based)
 
-### 4.1 Recall Comparison
+Πλεονεκτήματα:
+- Υψηλή ακρίβεια (1.0)
+- Σταθερότητα ως προς τις παραμέτρους
+- Εκμετάλλευση της δομής των δεδομένων
 
-| Configuration | KNN=25    | KNN=50    |
-| ------------- | --------- | --------- |
-| m=50, T=30    | 0.551     | **0.636** |
-| m=50, T≥50    | 1.000     | 1.000     |
-| m=100, T=30   | 0.298     | **0.332** |
-| m=100, T=50   | **0.556** | 0.517     |
-| m=100, T=75   | 0.773     | 0.772     |
-| m=100, T=100  | 1.000     | 1.000     |
-| m=200, T=30   | **0.177** | 0.145     |
-| m=200, T=50   | **0.260** | 0.247     |
-| m=200, T=75   | **0.409** | 0.355     |
-| m=200, T=100  | **0.507** | 0.475     |
+Μειονεκτήματα:
+- Χαμηλό QPS (3–4)
+- Μεγάλο κόστος εκπαίδευσης
+- Μικρότερη καταλληλότητα για real-time εφαρμογές
 
-**Summary:**
+## Classical ANN
 
-- KNN=50 performs better at low T values (T=30)
-- KNN=25 performs better at higher m values (m=200)
-- Both achieve identical perfect recall at optimal settings
+### LSH
+- Πολύ υψηλή ταχύτητα
+- Αστάθεια στο recall
 
-### 4.2 Throughput Comparison
+### Hypercube
+- Σταθερή ταχύτητα
+- Χαμηλή ακρίβεια
 
-| m   | KNN=25 Avg QPS | KNN=50 Avg QPS | Difference  |
-| --- | -------------- | -------------- | ----------- |
-| 50  | 16.50          | 14.45          | KNN=25 +14% |
-| 100 | 28.82          | 26.54          | KNN=25 +9%  |
-| 200 | 53.12          | 46.58          | KNN=25 +14% |
+### IVFFlat
+- Σχεδόν τέλεια ακρίβεια
+- Χαμηλή ταχύτητα
 
-**Finding:** KNN=25 consistently achieves ~10-14% higher throughput on SIFT.
+### IVFPQ
+- Βέλτιστο trade-off
+- Πολύ υψηλό QPS
+- Ακρίβεια μέχρι ~0.99 (όχι 1.0)
 
----
+# 5. Τελική Σύνοψη
 
-## 5. Perfect Recall Configurations
+| Πεδίο | Νικητής |
+|-------|---------|
+| Ακρίβεια | Neural-LSH |
+| Ταχύτητα | LSH / Hypercube / IVFPQ |
+| Trade-off | IVFPQ |
+| Απαιτητική ακρίβεια > ταχύτητα | Neural-LSH |
+| Real-time παραγωγή | IVFPQ |
 
-Only **4 configurations** achieve perfect recall (1.0) on SIFT for each graph structure:
-
-### KNN=25 — Perfect Recall
-
-| m   | T   | Recall@5 | QPS       | Speedup |
-| --- | --- | -------- | --------- | ------- |
-| 100 | 100 | 1.000    | **16.13** | 0.57×   |
-| 50  | 100 | 1.000    | 14.52     | 0.54×   |
-| 50  | 50  | 1.000    | 13.80     | 0.57×   |
-| 50  | 75  | 1.000    | 13.02     | 0.56×   |
-
-### KNN=50 — Perfect Recall
-
-| m   | T   | Recall@5 | QPS       | Speedup |
-| --- | --- | -------- | --------- | ------- |
-| 100 | 100 | 1.000    | **14.39** | 0.55×   |
-| 50  | 100 | 1.000    | 12.62     | 0.59×   |
-| 50  | 75  | 1.000    | 12.25     | 0.57×   |
-| 50  | 50  | 1.000    | 12.07     | 0.56×   |
-
-**Optimal Configuration:** m=100, T=100, KNN=25 — achieves 1.0 recall at 16.1 QPS
-
----
-
-## 6. SIFT vs MNIST Comparison
-
-### 6.1 Recall Comparison (KNN=25)
-
-| Configuration | MNIST | SIFT  | Difference |
-| ------------- | ----- | ----- | ---------- |
-| m=50, T=30    | 0.615 | 0.551 | -0.064     |
-| m=50, T=50    | 1.000 | 1.000 | 0          |
-| m=100, T=30   | 0.381 | 0.298 | -0.083     |
-| m=100, T=50   | 0.667 | 0.556 | -0.110     |
-| m=100, T=75   | 0.855 | 0.773 | -0.082     |
-| m=200, T=100  | 0.532 | 0.507 | -0.025     |
-
-**Finding:** SIFT shows 5-11% lower recall than MNIST at intermediate configurations, indicating it's a harder dataset for approximate search.
-
-### 6.2 Throughput Comparison
-
-| Configuration | MNIST QPS | SIFT QPS | Ratio    |
-| ------------- | --------- | -------- | -------- |
-| m=50, T=50    | 3.49      | 13.80    | **4.0×** |
-| m=100, T=100  | 3.67      | 16.13    | **4.4×** |
-| m=200, T=75   | 10.55     | 44.23    | **4.2×** |
-| **Average**   | —         | —        | **~4×**  |
-
-**Finding:** SIFT achieves approximately **4× higher QPS** than MNIST across all configurations.
-
-### 6.3 Speedup Comparison
-
-| m   | MNIST Speedup | SIFT Speedup |
-| --- | ------------- | ------------ |
-| 50  | 0.76×         | 0.67×        |
-| 100 | 1.29×         | 1.06×        |
-| 200 | 2.69×         | 1.90×        |
-
-**Finding:** SIFT shows **lower speedup ratios** — the approximate method provides less benefit relative to exact search on SIFT.
-
----
+Τελικό συμπέρασμα:  
+Οι neural-LSH graph-based μέθοδοι υπερέχουν σε ακρίβεια (1.0), αλλά οι κλασικοί ANN αλγόριθμοι – ειδικά ο IVFPQ – παραμένουν πολύ πιο ταχείς και πρακτικοί στη χρήση.
