@@ -333,24 +333,13 @@ tApproximateAverage: 0.059443
 tTrueAverage: 0.288515
 ```
 
-## Expected Results
+### Comparison with Project 1 algorithms
 
-### MNIST (60k train, 10k test)
+We compared several Project 1 approximate search methods (IVFFLAT, IVFPQ, LSH and Hypercube) as candidates for constructing the k-NN graph and producing pre-computed search outputs used by the Neural LSH pipeline. Across our experiments, IVFFLAT consistently produced the best trade-off for our needs: it delivered the highest Average AF and the strongest Recall scores while providing reasonably sized candidate sets for downstream processing. For these reasons, we used the best IVFFLAT runs as the baseline and primary input to the Project 2 pipeline.
 
-| Config           | Recall@10 | QPS  | Build Time |
-| ---------------- | --------- | ---- | ---------- |
-| m=50, T=3, k=10  | ~70%      | ~100 | 15 min     |
-| m=100, T=5, k=15 | ~85%      | ~50  | 25 min     |
-| m=200, T=7, k=20 | ~92%      | ~30  | 40 min     |
+LSH and Hypercube were less robust in our tests. They sometimes produced fast queries (higher raw QPS) on favorable parameter settings, but their Recall and Average AF were markedly lower and more sensitive to hashing parameters. In practice, this meant LSH/Hypercube returned fewer true nearest neighbors and required extensive parameter tuning to approach IVFFLAT's accuracy — which reduced their practical advantage in our workflow.
 
-### SIFT (1M base, 10k query)
-
-| Config           | Recall@10 | QPS | Build Time |
-| ---------------- | --------- | --- | ---------- |
-| m=100, T=5, k=15 | ~75%      | ~20 | 2 hours    |
-| m=200, T=7, k=20 | ~88%      | ~15 | 4 hours    |
-
----
+In short, IVFFLAT gave us the most reliable candidate lists for building a high-quality k-NN graph (or for providing a stable `calculated_output`), so we used IVFFLAT-produced outputs for most of the Neural LSH experiments reported in this repository.
 
 ## References
 
