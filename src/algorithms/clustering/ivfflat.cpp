@@ -90,8 +90,8 @@ void IVFFlat::search(const vector<VectorData> &queries, ofstream &out)
         // Select top b = nprobe_ cells (S ⊂ {1,...,k})
         int probeCount = min(Nprobe, (int)centroidDists.size());
         nth_element(centroidDists.begin(),
-                        centroidDists.begin() + probeCount,
-                        centroidDists.end());
+                    centroidDists.begin() + probeCount,
+                    centroidDists.end());
         sort(centroidDists.begin(), centroidDists.begin() + probeCount);
 
         // Collect candidates from U = ⋃_j∈S IL_j
@@ -126,8 +126,8 @@ void IVFFlat::search(const vector<VectorData> &queries, ofstream &out)
         if (keepApprox > 0)
         {
             nth_element(distApprox.begin(),
-                           distApprox.begin() + keepApprox,
-                           distApprox.end());
+                        distApprox.begin() + keepApprox,
+                        distApprox.end());
             sort(distApprox.begin(), distApprox.begin() + keepApprox);
             distApprox.resize(keepApprox);
         }
@@ -136,7 +136,7 @@ void IVFFlat::search(const vector<VectorData> &queries, ofstream &out)
         calculatePerQueryMetrics(queries[qi].id, qi, tApprox, distApprox, rlist, out);
     }
     printSummary(Q, out);
-    out << "Silhouette Score: " << SilhouetteScore << endl; 
+    out << "Silhouette Score: " << SilhouetteScore << endl;
 }
 
 /**
@@ -153,19 +153,32 @@ double IVFFlat::calculateSilhouetteScore()
         return 0.0;
 
     vector<int> point_id_to_centroid(N, -1);
-    for (int c = 0; c < k; ++c) {
+    for (int c = 0; c < k; ++c)
+    {
         if (Lists[c].empty())
             continue;
         for (int id : Lists[c])
             point_id_to_centroid[id] = c;
     }
 
-
-    for (int i = 0; i < N; ++i) {
+    for (int i = 0; i < N; ++i)
+    {
         int ci = point_id_to_centroid[i];
 
-        if (ci < 0)
+        bool already_calculated = false;
+        for (int l : calculated_silhouettes)
+        {
+            if (l == ci)
+            {
+                already_calculated = true;
+                break;
+            }
+        }
+
+        if (ci < 0 || already_calculated)
             continue;
+
+        calculated_silhouettes.emplace_back(ci);
 
         const auto &xi = Data[i].values;
 
@@ -173,7 +186,8 @@ double IVFFlat::calculateSilhouetteScore()
         double b_i = 0.0;
         int count = 0;
 
-        for (int id : Lists[ci]) {
+        for (int id : Lists[ci])
+        {
             if (id == i)
                 continue;
             a_i += l2(xi, Data[id].values);
@@ -186,19 +200,23 @@ double IVFFlat::calculateSilhouetteScore()
 
         double closest_neighbor_dist = numeric_limits<double>::infinity();
         int closest_neighbor_centroid = -1;
-        for (int c = 0; c < k; c++) {
-            if (c == ci || Lists[c].empty()) 
+        for (int c = 0; c < k; c++)
+        {
+            if (c == ci || Lists[c].empty())
                 continue;
             double distance = l2(xi, Centroids[c]);
-            if (distance < closest_neighbor_dist) {
+            if (distance < closest_neighbor_dist)
+            {
                 closest_neighbor_centroid = c;
                 closest_neighbor_dist = distance;
             }
         }
 
-        if (closest_neighbor_centroid != -1) {
+        if (closest_neighbor_centroid != -1)
+        {
             count = 0;
-            for (int id : Lists[closest_neighbor_centroid]) {
+            for (int id : Lists[closest_neighbor_centroid])
+            {
                 if (id == i)
                     continue;
                 b_i += l2(xi, Data[id].values);
@@ -217,7 +235,7 @@ double IVFFlat::calculateSilhouetteScore()
         s_i = (b_i - a_i) / max(a_i, b_i);
 
         clusterSum += s_i;
-        clusterCount ++;
+        clusterCount++;
     }
 
     return clusterSum / clusterCount;
@@ -230,8 +248,8 @@ double IVFFlat::calculateSilhouetteScore()
 void IVFFlat::kmeansWithPP(
     const vector<vector<float>> &P,
     int k,
-    vector<vector<float>> &centroids
-) {
+    vector<vector<float>> &centroids)
+{
 
     int n = P.size();
     centroids.reserve(k);
@@ -241,17 +259,19 @@ void IVFFlat::kmeansWithPP(
     int first = uni_dist(rng);
     centroids.emplace_back(P[first]);
 
-
     vector<double> D(n, 0.0);
 
     // (2)-(4) Choose the next k-1 centroids
-    for (int t = 1; t < k; ++t) {
+    for (int t = 1; t < k; ++t)
+    {
         double sumD = 0.0;
 
         // Compute D(i) = distance to nearest chosen centroid
-        for (int i = 0; i < n; i++) {
+        for (int i = 0; i < n; i++)
+        {
             double d = l2(P[i], centroids[0]);
-            for (int c = 0; c < t; c++) {
+            for (int c = 0; c < t; c++)
+            {
                 d = min(d, l2(P[i], centroids[c]));
             }
             D[i] = d;
@@ -264,9 +284,11 @@ void IVFFlat::kmeansWithPP(
 
         double cumulative = 0.0;
         int next = 0;
-        for (int i = 0; i < n; i++) {
+        for (int i = 0; i < n; i++)
+        {
             cumulative += D[i];
-            if (cumulative >= rnd) {
+            if (cumulative >= rnd)
+            {
                 next = i;
                 break;
             }

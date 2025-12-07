@@ -141,12 +141,12 @@ make
 
 #### IVF-Flat
 ```bash
-./bin/search -d ./datasets/MNIST/train-images.idx3-ubyte -q ./datasets/MNIST/t10k-images.idx3-ubyte -o out_ivfflat.txt -type mnist -ivfflat -kclusters 50 -nprobe 3
+./bin/search -d ./datasets/MNIST/train-images.idx3-ubyte -q ./datasets/MNIST/t10k-images.idx3-ubyte -o out_ivfflat.txt -type mnist -ivfflat -kclusters 50 -nprobe 8
 ```
 
 #### IVF-PQ
 ```bash
-./bin/search -d ./datasets/MNIST/train-images.idx3-ubyte -q ./datasets/MNIST/t10k-images.idx3-ubyte -o out_ivfpq.txt -type mnist -ivfpq -kclusters 100 -nprobe 5 -nbits 8 -Msub 4
+./bin/search -d ./datasets/MNIST/train-images.idx3-ubyte -q ./datasets/MNIST/t10k-images.idx3-ubyte -o out_ivfpq.txt -type mnist -ivfpq -kclusters 50 -nprobe 8 -nbits 8 -Msub 4
 ```
 
 ---
