@@ -1,0 +1,4 @@
+num_proteins: 50000
+embed_dim: 320
+dtype: float32
+model: ESM-2 (6 layers)

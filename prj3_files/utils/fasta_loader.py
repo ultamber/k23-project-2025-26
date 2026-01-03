@@ -1,7 +1,6 @@
 from typing import List, Tuple, Dict
 from pathlib import Path
 
-
 def load_fasta(filepath: str) -> List[Tuple[str, str]]:
 
     sequences = []
@@ -21,7 +20,6 @@ def load_fasta(filepath: str) -> List[Tuple[str, str]]:
                     sequences.append((current_id, ''.join(current_seq)))
                 
                 # Parse new header
-                # Format: >sp|P12345|PROT_HUMAN Description...
                 header = line[1:]
                 
                 # Extract ID
@@ -110,4 +108,4 @@ if __name__ == '__main__':
         info = parse_uniprot_id(sequences[0][0])
         print(f"\nParsed info:")
         for key, value in info.items():
-            print(f"  {key}: {value}")
+            print(f"{key}: {value}")

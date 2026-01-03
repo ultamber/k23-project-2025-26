@@ -222,7 +222,7 @@ def main():
         })
 
         if (q_id + 1) % 100 == 0:
-            print(f"  Processed {q_id + 1}/{n_queries} queries...")
+            print(f"Processed {q_id + 1}/{n_queries} queries...")
 
     # Compute averages
     avg_af = sum_af / n_queries
@@ -232,9 +232,9 @@ def main():
     qps = 1.0 / avg_time_approx if avg_time_approx > 0 else 0
 
     print(f"Search completed")
-    print(f"  Recall@{args.N}: {avg_recall*100:.2f}%")
-    print(f"  Average AF: {avg_af:.4f}")
-    print(f"  QPS: {qps:.2f}")
+    print(f"Recall@{args.N}: {avg_recall*100:.2f}%")
+    print(f"Average AF: {avg_af:.4f}")
+    print(f"QPS: {qps:.2f}")
 
     # Write output
     print(f"\nWriting results to {args.o}...")
@@ -270,9 +270,9 @@ def main():
 
     print(f"Results saved")
     print(f"\nSummary:")
-    print(f"  Average AF: {avg_af:.4f}")
-    print(f"  Recall@{args.N}: {avg_recall*100:.2f}%")
-    print(f"  QPS: {qps:.2f}")
+    print(f"Average AF: {avg_af:.4f}")
+    print(f"Recall@{args.N}: {avg_recall*100:.2f}%")
+    print(f"QPS: {qps:.2f}")
 
 
 if __name__ == "__main__":

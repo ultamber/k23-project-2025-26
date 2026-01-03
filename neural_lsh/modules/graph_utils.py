@@ -259,17 +259,17 @@ def run_kahip(csr, m=100, imbalance=0.03, mode=2, seed=1):
             return np.array(blocks, dtype=np.int32)
 
         except subprocess.TimeoutExpired:
-            print(f"[KaHIP] ✗ Timeout after 1 hour")
+            print(f"[KaHIP] Timeout after 1 hour")
             return fallback_partition(csr, m)
 
         except subprocess.CalledProcessError as e:
-            print(f"[KaHIP] ✗ Failed with return code {e.returncode}")
+            print(f"[KaHIP] Failed with return code {e.returncode}")
             if e.returncode == -11:
                 print(f"[KaHIP]   Segmentation fault detected")
             return fallback_partition(csr, m)
 
         except Exception as e:
-            print(f"[KaHIP] ✗ Error: {e}")
+            print(f"[KaHIP] Error: {e}")
             return fallback_partition(csr, m)
 
 
@@ -301,17 +301,17 @@ def build_symmetric_graph(knn_indices):
 
     # === VALIDATION BLOCK ===
     print(f"\n[DEBUG] Validating k-NN graph before symmetrization...")
-    print(f"  Shape: {knn_indices.shape}")
-    print(f"  Min index: {knn_indices.min()}")
-    print(f"  Max index: {knn_indices.max()}")
-    print(f"  Expected max: {n-1}")
+    print(f"Shape: {knn_indices.shape}")
+    print(f"Min index: {knn_indices.min()}")
+    print(f"Max index: {knn_indices.max()}")
+    print(f"Expected max: {n-1}")
 
     # Check for invalid indices
     invalid_mask = (knn_indices < 0) | (knn_indices >= n)
     if invalid_mask.any():
         n_invalid = invalid_mask.sum()
-        print(f"  ERROR: Found {n_invalid} invalid indices!")
-        print(f"  Invalid indices: {knn_indices[invalid_mask][:10]}...")  # Show first 10
+        print(f"ERROR: Found {n_invalid} invalid indices!")
+        print(f"Invalid indices: {knn_indices[invalid_mask][:10]}...")  # Show first 10
         raise ValueError("k-NN graph contains invalid indices")
 
     # Check for self-loops
@@ -321,10 +321,10 @@ def build_symmetric_graph(knn_indices):
             self_loops.append(i)
 
     if self_loops:
-        print(f"  WARNING: Found {len(self_loops)} self-loops in first 100 nodes")
-        print(f"  Self-loop nodes: {self_loops[:10]}...")
+        print(f"WARNING: Found {len(self_loops)} self-loops in first 100 nodes")
+        print(f"Self-loop nodes: {self_loops[:10]}...")
 
-    print(f"  ✓ k-NN graph validation passed")
+    print(f"k-NN graph validation passed")
     # === END VALIDATION BLOCK ===
 
     # Build set of k-NN relationships
@@ -366,13 +366,13 @@ def build_symmetric_graph(knn_indices):
                 non_reciprocal_count += 1
 
     print(f"[graph_utils] Edge weights assigned:")
-    print(f"  Reciprocal edges: {reciprocal_count:,} (weight=2)")
-    print(f"  Non-reciprocal edges: {non_reciprocal_count:,} (weight=1)")
-    print(f"  Total edges: {reciprocal_count + non_reciprocal_count:,}")
+    print(f"Reciprocal edges: {reciprocal_count:,} (weight=2)")
+    print(f"Non-reciprocal edges: {non_reciprocal_count:,} (weight=1)")
+    print(f"Total edges: {reciprocal_count + non_reciprocal_count:,}")
 
     # === ADD FINAL GRAPH CHECK ===
     total_edges = sum(len(neighbors) for neighbors in adj)
-    print(f"  Total edge count: {total_edges:,}")
+    print(f"Total edge count: {total_edges:,}")
 
     if total_edges == 0:
         raise ValueError("Graph has NO edges! Cannot partition empty graph.")

@@ -112,7 +112,7 @@ def load_or_build_knn_graph(X, args,index_dir):
         return knn_graph
 
     # Option 2: Build graph
-    print(f"\n[STEP 2] Building k-NN graph (k={args.knn})...")
+    print(f"\nBuilding k-NN graph (k={args.knn})...")
 
     print(f" Using algorithm for k-NN graph (default : IVFFLAT)...")
     try:
@@ -144,8 +144,8 @@ def load_or_build_knn_graph(X, args,index_dir):
     # Save k-NN graph for future use
     knn_graph_file = index_dir / "knn_graph.npy"
     np.save(knn_graph_file, knn_graph)
-    print(f"  k-NN graph saved to: {knn_graph_file}")
-    print(f"  Shape: {knn_graph.shape}")
+    print(f"k-NN graph saved to: {knn_graph_file}")
+    print(f"Shape: {knn_graph.shape}")
 
     return knn_graph
 
@@ -165,7 +165,7 @@ def main():
     # ========================================================================
     # STEP 1: Load Dataset
     # ========================================================================
-    print(f"\n[STEP 1] Loading dataset from {args.dataset_file}...")
+    print(f"\nLoading dataset from {args.dataset_file}...")
     X = load_dataset(args.dataset_file, args.type)
 
     if args.debug:
@@ -174,12 +174,12 @@ def main():
 
     n, d = X.shape
     print(f"Dataset loaded: n={n:,} vectors, d={d} dimensions")
-    print(f"  Data type: {X.dtype}")
-    print(f"  Value range: [{X.min():.2f}, {X.max():.2f}]")
+    print(f"Data type: {X.dtype}")
+    print(f"Value range: [{X.min():.2f}, {X.max():.2f}]")
 
     # Normalize data if needed
     if X.max() > 1.0 and args.type == "mnist":
-        print(f"  Normalizing MNIST data to [0, 1] range")
+        print(f"Normalizing MNIST data to [0, 1] range")
         X = X / 255.0
 
     # ========================================================================
@@ -190,32 +190,32 @@ def main():
     # ========================================================================
     # STEP 3: Symmetrize Graph with Edge Weights
     # ========================================================================
-    print(f"\n[STEP 3] Symmetrizing graph and assigning edge weights...")
+    print(f"\nSymmetrizing graph and assigning edge weights...")
     adj = build_symmetric_graph(knn_graph)
     print(f"Graph symmetrized")
 
     # Print graph statistics
     total_edges = sum(len(neighbors) for neighbors in adj)
     avg_degree = total_edges / n
-    print(f"  Total edges: {total_edges:,}")
-    print(f"  Average degree: {avg_degree:.1f}")
+    print(f"Total edges: {total_edges:,}")
+    print(f"Average degree: {avg_degree:.1f}")
 
     # ========================================================================
     # STEP 4: Convert to CSR Format
     # ========================================================================
-    print(f"\n[STEP 4] Converting to CSR format for KaHIP...")
+    print(f"\nConverting to CSR format for KaHIP...")
     csr_graph = to_csr(adj)
     print(f"CSR format created")
-    print(f"  xadj size: {len(csr_graph['xadj'])}")
-    print(f"  adjncy size: {len(csr_graph['adjncy'])}")
+    print(f"xadj size: {len(csr_graph['xadj'])}")
+    print(f"adjncy size: {len(csr_graph['adjncy'])}")
 
     # ========================================================================
     # STEP 5: Run KaHIP for Balanced Partitioning
     # ========================================================================
-    print(f"\n[STEP 5] Running KaHIP partitioning...")
-    print(f"  Target partitions: {args.m}")
-    print(f"  Imbalance: {args.imbalance}")
-    print(f"  Mode: {args.kahip_mode}")
+    print(f"\nRunning KaHIP partitioning...")
+    print(f"Target partitions: {args.m}")
+    print(f"Imbalance: {args.imbalance}")
+    print(f"Mode: {args.kahip_mode}")
 
     labels = run_kahip(
         csr_graph,
@@ -228,34 +228,34 @@ def main():
     # Verify partitioning quality
     unique_labels = np.unique(labels)
     print(f"Partitioning completed")
-    print(f"  Unique partitions: {len(unique_labels)}")
-    print(f"  Expected: {args.m}")
+    print(f"Unique partitions: {len(unique_labels)}")
+    print(f"Expected: {args.m}")
 
     if len(unique_labels) != args.m:
-        print(f"    Warning: Got {len(unique_labels)} partitions instead of {args.m}")
+        print(f"  Warning: Got {len(unique_labels)} partitions instead of {args.m}")
 
     # Partition balance statistics
     partition_sizes = np.bincount(labels)
-    print(f"  Partition sizes:")
-    print(f"    Min: {partition_sizes.min()}")
-    print(f"    Max: {partition_sizes.max()}")
-    print(f"    Mean: {partition_sizes.mean():.1f}")
-    print(f"    Std: {partition_sizes.std():.1f}")
+    print(f"Partition sizes:")
+    print(f"  Min: {partition_sizes.min()}")
+    print(f"  Max: {partition_sizes.max()}")
+    print(f"  Mean: {partition_sizes.mean():.1f}")
+    print(f"  Std: {partition_sizes.std():.1f}")
 
     # ========================================================================
     # STEP 6: Train MLP Classifier
     # ========================================================================
-    print(f"\n[STEP 6] Training MLP classifier...")
-    print(f"  Input dim: {d}")
-    print(f"  Output classes: {args.m}")
-    print(f"  Hidden layers: {args.layers}")
-    print(f"  Nodes per layer: {args.nodes}")
-    print(f"  Dropout: {args.dropout}")
-    print(f"  Epochs: {args.epochs}")
-    print(f"  Batch size: {args.batch_size}")
-    print(f"  Learning rate: {args.lr}")
-    print(f"  Weight decay: {args.weight_decay}")
-    print(f"  Patience: {args.patience}")
+    print(f"\nTraining MLP classifier...")
+    print(f"Input dim: {d}")
+    print(f"Output classes: {args.m}")
+    print(f"Hidden layers: {args.layers}")
+    print(f"Nodes per layer: {args.nodes}")
+    print(f"Dropout: {args.dropout}")
+    print(f"Epochs: {args.epochs}")
+    print(f"Batch size: {args.batch_size}")
+    print(f"Learning rate: {args.lr}")
+    print(f"Weight decay: {args.weight_decay}")
+    print(f"Patience: {args.patience}")
 
     model = MLPClassifier(
         d_in=d,
@@ -290,13 +290,13 @@ def main():
     print("="*70)
     print(f"\nIndex location: {index_dir.absolute()}")
     print(f"Index files:")
-    print(f"  - model.pth (trained MLP)")
-    print(f"  - inverted_index.pkl (partition → point mapping)")
-    print(f"  - dataset.npy (original data)")
-    print(f"  - metadata.json (configuration)")
+    print(f"- model.pth (trained MLP)")
+    print(f"- inverted_index.pkl (partition → point mapping)")
+    print(f"- dataset.npy (original data)")
+    print(f"- metadata.json (configuration)")
 
     if args.save_knn_graph:
-        print(f"  - {args.save_knn_graph} (k-NN graph for reuse)")
+        print(f"- {args.save_knn_graph} (k-NN graph for reuse)")
 
     print()
 

@@ -1,1 +1,19 @@
-# torch numpy tqdm fair-esm
+numpy>=1.21.0
+torch>=2.0.0
+transformers>=4.30.0
+tqdm>=4.65.0
+fair-esm
+# Bioinformatics
+biopython>=1.81
+
+# For UniprotKB access
+requests>=2.28.0
+
+# ANN methods
+faiss-cpu>=1.7.4  # or faiss-gpu for CUDA
+scikit-learn>=1.0.0
+
+# Note: For BLAST, install NCBI BLAST+ separately:
+# Ubuntu/Debian: sudo apt-get install ncbi-blast+
+# macOS: brew install blast
+# Or download from: https://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/LATEST/

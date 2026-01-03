@@ -100,7 +100,7 @@ def validate_and_fix_knn_graph(knn_graph, n, k):
     2. Self-loops
     3. Insufficient neighbors
     """
-    print(f"  Original graph shape: {knn_graph.shape}")
+    print(f"Original graph shape: {knn_graph.shape}")
 
     # Count issues
     invalid_count = 0
@@ -140,9 +140,9 @@ def validate_and_fix_knn_graph(knn_graph, n, k):
 
     knn_graph_fixed = np.array(fixed_rows, dtype=np.int32)
 
-    print(f"  Fixed graph shape: {knn_graph_fixed.shape}")
-    print(f"  Invalid indices removed: {invalid_count}")
-    print(f"  Self-loops removed: {self_loop_count}")
+    print(f"Fixed graph shape: {knn_graph_fixed.shape}")
+    print(f"Invalid indices removed: {invalid_count}")
+    print(f"Self-loops removed: {self_loop_count}")
 
     # Final validation
     assert knn_graph_fixed.shape == (n, k), f"Shape mismatch: {knn_graph_fixed.shape} != ({n}, {k})"
@@ -152,9 +152,9 @@ def validate_and_fix_knn_graph(knn_graph, n, k):
     # Check for self-loops
     for i in range(n):
         if i in knn_graph_fixed[i]:
-            print(f"  WARNING: Self-loop found at node {i}")
+            print(f"WARNING: Self-loop found at node {i}")
 
-    print(f"✓ Graph validation passed")
+    print(f"Graph validation passed")
 
     return knn_graph_fixed
 
@@ -236,19 +236,19 @@ def parse_search_output(output_file, n, k):
 
                     # Skip invalid indices
                     if neighbor_id < 0 or neighbor_id >= n:
-                        print(f"  WARNING: Invalid neighbor {neighbor_id} for query {current_query}")
+                        print(f"WARNING: Invalid neighbor {neighbor_id} for query {current_query}")
                         continue
 
                     knn_graph[current_query, neighbor_count] = neighbor_id
                     neighbor_count += 1
 
                 except (IndexError, ValueError) as e:
-                    print(f"  WARNING: Failed to parse line: {line} ({e})")
+                    print(f"WARNING: Failed to parse line: {line} ({e})")
                     continue
 
     # Check for incomplete results
     incomplete = np.sum(knn_graph == -1)
     if incomplete > 0:
-        print(f"  WARNING: {incomplete}/{n*k} neighbors not found")
+        print(f"WARNING: {incomplete}/{n*k} neighbors not found")
 
     return knn_graph
