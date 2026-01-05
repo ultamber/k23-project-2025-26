@@ -300,7 +300,7 @@ class NeuralLSH:
         This requires the KaHIP binary to be installed.
         """
         # Import graph utilities from original implementation
-        from .graph_utils import build_symmetric_graph, to_csr, run_kahip
+        from utils.graph_utils import build_symmetric_graph, to_csr, run_kahip
         
         # Build symmetric graph
         adj = build_symmetric_graph(knn_graph)

@@ -129,8 +129,6 @@ class Hypercube:
         probe_list = self._probes_list(base)
         candidates = set()
         gathered = 0
-        candidates = set()
-        gathered = 0
         
         for vertex in probe_list:
             if vertex not in self.cube_:

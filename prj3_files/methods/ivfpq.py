@@ -58,9 +58,8 @@ class IVFPQ:
         print(f"IVF-PQ index built in {self.build_time:.2f}s!")
     
     def search(self, query, N=10):
-        query = query.astype(np.float32).reshape(1, -1)
         distances, indices = self.index.search(query, N)
-        return [(int(indices[0][i]), float(distances[0][i])) 
+        return [(int(indices[0][i]), float(np.sqrt(distances[0][i])))
                 for i in range(len(indices[0])) if indices[0][i] != -1]
     
     def batch_search(self, queries, N=10, verbose=True):
@@ -68,7 +67,7 @@ class IVFPQ:
         distances, indices = self.index.search(queries, N)
         results = []
         for qi in range(len(queries)):
-            query_results = [(int(indices[qi][i]), float(distances[qi][i]))
-                           for i in range(len(indices[qi])) if indices[qi][i] != -1]
+            query_results = [(int(indices[qi][i]), float(np.sqrt(distances[qi][i])))
+                        for i in range(len(indices[qi])) if indices[qi][i] != -1]
             results.append(query_results)
         return results

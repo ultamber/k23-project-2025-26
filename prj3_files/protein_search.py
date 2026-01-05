@@ -15,6 +15,7 @@ from methods.hypercube import Hypercube
 from utils.fasta_loader import load_fasta
 from utils.evaluation import PerformanceTracker
 from utils.output_formatter import format_output_txt
+from utils.results_writer import write_method_results, write_comparison_summary
 
 
 def parse_args():
@@ -22,7 +23,6 @@ def parse_args():
         description="Protein Search with ANN Methods",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
-
     parser.add_argument(
         '-d', '--database',
         help='Database vectors (.dat, .npy)'
@@ -42,7 +42,6 @@ def parse_args():
         default='all',
         help='ANN method to use (default: all)'
     )
-
     parser.add_argument(
         '--embeddings', '-e',
         help='Database embeddings file (.npy) - alternative to -d'
@@ -55,7 +54,6 @@ def parse_args():
         '--ground-truth', '-g',
         help='BLAST ground truth file (.pkl)'
     )
-
     parser.add_argument(
         '--N',
         type=int,
@@ -67,7 +65,6 @@ def parse_args():
         type=int,
         help='Maximum number of queries to process (for testing)'
     )
-
     parser.add_argument(
         '--run-blast',
         action='store_true',
@@ -85,7 +82,6 @@ def parse_args():
         default=8,
         help='BLAST threads (default: 8)'
     )
-
     parser.add_argument(
         '--embed-batch-size',
         type=int,
@@ -97,6 +93,10 @@ def parse_args():
         default='cuda',
         choices=['cuda', 'cpu'],
         help='Device for embedding generation (default: cuda)'
+    )
+    parser.add_argument(
+        '--pfam-map',
+        help='Pfam mapping file (.tsv) for biological evaluation'
     )
 
     # LSH
@@ -324,8 +324,11 @@ def main():
     
     else:
         raise ValueError("Must provide either -d/--database or --embeddings")
-
-    print(f"\nResolving queries...")
+    pfam_mapping = None
+    if args.pfam_map:
+        from utils.pfam_loader import load_pfam_mapping
+        pfam_mapping = load_pfam_mapping(args.pfam_map)
+        print(f"\nResolving queries...")
     
     query_embeddings = None
     query_ids = None
@@ -520,6 +523,7 @@ def main():
     
     # Check output format
     if output_path.suffix == '.txt':
+        output_dir = output_path.parent / output_path.stem
         # Format as text
         format_output_txt(
             results_dict,
@@ -529,6 +533,7 @@ def main():
             database_seqs=database_seqs,
             query_seqs=query_seqs,
             blast_results=blast_results,
+            pfam_mapping=pfam_mapping,
             N=args.N,
             display_n=10
         )
@@ -537,14 +542,37 @@ def main():
     else:
         # Save as JSON (directory)
         output_path.mkdir(parents=True, exist_ok=True)
-        
+        output_dir = output_path
         # Save comparison
         comparison_file = output_path / 'comparison.json'
         with open(comparison_file, 'w') as f:
             json.dump(results_dict, f, indent=2, default=str)
         
         print(f"Results saved to {output_path}/")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    # Write individual method results
+    for method_name, method_results in all_results.items():
+        write_method_results(
+            method_name=method_name,
+            output_dir=str(output_dir),
+            results=method_results,
+            metrics=tracker.metrics.get(method_name, {}),
+            query_ids=query_ids,
+            database_ids=database_ids,
+            blast_results=blast_results,
+            pfam_mapping=pfam_mapping,
+            query_seqs=query_seqs,
+            database_seqs=database_seqs,
+            N=args.N,
+            display_n=10
+        )
     
+    # Write comparison summary
+    write_comparison_summary(
+        output_dir=str(output_dir),
+        all_metrics=tracker.metrics,
+        N=args.N
+    )
     print(f"\n{'='*70}")
     print("Protein Search Completed")
     print(f"{'='*70}\n")

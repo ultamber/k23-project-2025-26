@@ -1,10 +1,9 @@
 import numpy as np
 from typing import List, Tuple, Dict, Set
 import time
-from Bio import Align
 
 
-def compute_recall_at_n(
+def compute_recall(
     ann_results: List[int],
     ground_truth: List[int],
     N: int
@@ -29,7 +28,7 @@ def compute_average_recall(
     recalls = []
     
     for ann_res, blast_res in zip(all_ann_results, all_ground_truth):
-        recall = compute_recall_at_n(ann_res, blast_res, N)
+        recall = compute_recall(ann_res, blast_res, N)
         recalls.append(recall)
     
     return np.mean(recalls)
@@ -250,36 +249,3 @@ def save_results(
     
     print(f"Results saved to: {output_file}")
 
-def compute_sequence_identity(seq1: str, seq2: str) -> float:
-    """
-    Compute sequence identity percentage using pairwise alignment.
-    
-    Args:
-        seq1: First sequence
-        seq2: Second sequence
-        
-    Returns:
-        Identity percentage (0-100)
-    """
-    if not seq1 or not seq2:
-        return 0.0
-    
-    aligner = Align.PairwiseAligner()
-    aligner.mode = 'global'
-    # Use Biopython's pairwise alignment
-    alignments = aligner.align(seq1, seq2)
-    
-    if not alignments:
-        return 0.0
-    
-    alignment = alignments[0]
-    aligned_seq1 = alignment.seqA
-    aligned_seq2 = alignment.seqB
-    
-    # Count matches
-    matches = sum(1 for a, b in zip(aligned_seq1, aligned_seq2) if a == b)
-    
-    # Identity = matches / min(len(seq1), len(seq2))
-    identity = 100.0 * matches / min(len(seq1), len(seq2))
-    
-    return identity

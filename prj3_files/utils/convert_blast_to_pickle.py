@@ -116,14 +116,14 @@ def main():
         query_ids,
         args.N
     )
-    print(f"    ✓ Found {len(results['blast_results_ids'])} queries with hits")
-    print(f"    ✓ Converted {len(results['blast_results_indices'])} to indices")
+    print(f"    Found {len(results['blast_results_ids'])} queries with hits")
+    print(f"    Converted {len(results['blast_results_indices'])} to indices")
     
     # Save to pickle
     print(f"\n[3] Saving to {args.output}...")
     with open(args.output, 'wb') as f:
         pickle.dump(results, f)
-    print(f"    ✓ Saved!")
+    print(f"    Saved!")
     
     print("\n" + "="*70)
     print("Done!")
