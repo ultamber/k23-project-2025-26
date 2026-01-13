@@ -134,7 +134,7 @@ class BLASTRunner:
         self,
         output_file: str,
         N: int
-    ) -> Dict[str, List[Tuple[str, float, float]]]:
+        ) -> Dict[str, List[Tuple[str, float, float, float]]]:
 
         results = {}
         
@@ -159,22 +159,19 @@ class BLASTRunner:
                 if query_id == subject_id:
                     continue
                 
-                # E-value already filtered by BLAST, but double-check
                 if evalue > self.evalue_threshold:
                     continue
                 
-                # Store result
                 if query_id not in results:
                     results[query_id] = []
                 
-                results[query_id].append((subject_id, bitscore, evalue))
+                results[query_id].append((subject_id, bitscore, evalue, pident))
         
-        # Sort by bitscore (descending) and keep top-N
         for query_id in results:
             results[query_id].sort(key=lambda x: x[1], reverse=True)
             results[query_id] = results[query_id][:N]
         
-        print(f"Parsed results for {len(results)} queries")
+        print(f"Parsed results for {len(results)} queries (with identity %)")
         
         return results
     
@@ -222,7 +219,6 @@ class BLASTRunner:
         return results
     
     def cleanup(self):
-        """Remove temporary database files."""
         if self.db_path:
             # Remove database files
             for ext in ['.phr', '.pin', '.psq', '.pdb', '.pot', '.ptf', '.pto']:
@@ -313,7 +309,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     print("="*70)
-    print("BLAST RUNNER - GROUND TRUTH GENERATION")
+    print("Blast runner")
     print("="*70)
 
     db_id_to_index = None
@@ -420,7 +416,12 @@ if __name__ == '__main__':
             
             # Convert hit IDs to indices
             hit_indices = []
-            for hit_id, score, evalue in hits:
+            for hit in hits:
+                if len(hit) >= 4:
+                    hit_id, score, evalue, pident = hit[0], hit[1], hit[2], hit[3]
+                else:
+                    hit_id, score, evalue = hit[0], hit[1], hit[2]
+                    pident = None
                 hit_acc = get_accession(hit_id)
                 
                 if hit_acc in db_id_to_index:
@@ -442,13 +443,13 @@ if __name__ == '__main__':
             print(f"{len(conversion_stats['missing_query_ids'])} query IDs not found in mapping")
             if len(conversion_stats['missing_query_ids']) <= 5:
                 for qid in conversion_stats['missing_query_ids']:
-                    print(f"    - {qid}")
+                    print(f"- {qid}")
         
         if conversion_stats['missing_hit_ids']:
             print(f"{len(conversion_stats['missing_hit_ids'])} hit IDs not found in mapping")
             if len(conversion_stats['missing_hit_ids']) <= 5:
                 for hid in list(conversion_stats['missing_hit_ids'])[:5]:
-                    print(f"    - {hid}")
+                    print(f"- {hid}")
     
     print(f"\nSaving results...")
     
@@ -473,7 +474,11 @@ if __name__ == '__main__':
         sample_hits = results[sample_query][:5]
         
         print(f"\nSample results (query: {sample_query}):")
-        for hit_id, score, evalue in sample_hits:
+        for hit in sample_hits:
+            hit_id = hit[0]
+            score = hit[1]
+            evalue = hit[2]
+            pident = hit[3] if len(hit) > 3 else None
             print(f"{hit_id}: score={score:.1f}, E={evalue:.2e}")
     
     # Data format info
@@ -485,9 +490,9 @@ if __name__ == '__main__':
     
     print(f"\nUsage in protein_search.py:")
     print(f"python protein_search.py \\")
-    print(f"    --ground-truth {args.output} \\")
-    print(f"    --embeddings <embeddings.npy> \\")
-    print(f"    --queries <queries.npy>")
+    print(f"--ground-truth {args.output} \\")
+    print(f"--embeddings <embeddings.npy> \\")
+    print(f"--queries <queries.npy>")
     
     # Cleanup
     blast.cleanup()

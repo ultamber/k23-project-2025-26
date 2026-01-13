@@ -240,13 +240,7 @@ def generate_pfam_bio_comment(
     distance: float,
     in_blast_top_n: Optional[bool]
 ) -> str:
-    """
-    Remote homolog criteria:
-    - Same Pfam family (functional similarity)
-    - Low sequence identity (<30% - Twilight Zone)
-    - Close in embedding space (small L2 distance)
-    """
-    
+
     if query_pfam is None or neighbor_pfam is None:
         return "--"
     

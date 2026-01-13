@@ -56,7 +56,7 @@ void IVFFlat::buildIndex()
         // Append (id(x), x) to IL_j*(x)
         Lists[best].push_back(i);
     }
-    SilhouetteScore = calculateSilhouetteScore();
+    // SilhouetteScore = calculateSilhouetteScore();
 }
 
 /**
@@ -135,8 +135,8 @@ void IVFFlat::search(const vector<VectorData> &queries, ofstream &out)
         double tApprox = duration<double>(high_resolution_clock::now() - t0).count();
         calculatePerQueryMetrics(queries[qi].id, qi, tApprox, distApprox, rlist, out);
     }
-    printSummary(Q, out);
-    out << "Silhouette Score: " << SilhouetteScore << endl;
+    // printSummary(Q, out);
+    // out << "Silhouette Score: " << SilhouetteScore << endl;
 }
 
 /**

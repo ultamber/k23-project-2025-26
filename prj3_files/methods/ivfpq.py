@@ -8,22 +8,26 @@ try:
 except ImportError:
     FAISS_AVAILABLE = False
 
-
 class IVFPQ:
     def __init__(self, n_clusters=None, n_probe=10, M=8, nbits=8, metric='L2', seed=42):
         if not FAISS_AVAILABLE:
-            raise RuntimeError("FAISS required! pip install faiss-cpu")
+            raise RuntimeError("FAISS required pip install faiss-cpu")
         self.n_clusters = n_clusters
         self.n_probe = n_probe
         self.M = M
         self.nbits = nbits
-        self.metric = metric
+        self.metric = metric.lower()
         self.seed = seed
         self.dim = None
         self.n = None
         self.index = None
         self.embeddings = None
         self.build_time = None
+    
+    def _normalize(self, vectors: np.ndarray) -> np.ndarray:
+        norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+        norms = np.maximum(norms, 1e-8)
+        return vectors / norms
     
     def build_index(self, embeddings):
         t0 = time.time()
@@ -40,9 +44,22 @@ class IVFPQ:
         print(f"  k = {self.n_clusters} clusters")
         print(f"  M = {self.M} subquantizers")
         print(f"  n_probe = {self.n_probe}")
+        print(f"  metric = {self.metric}")
         
-        quantizer = faiss.IndexFlatL2(self.dim)
-        self.index = faiss.IndexIVFPQ(quantizer, self.dim, self.n_clusters, self.M, self.nbits, faiss.METRIC_L2)
+        # Choose metric
+        if self.metric == 'cosine':
+            self.embeddings = self._normalize(self.embeddings)
+            quantizer = faiss.IndexFlatIP(self.dim)
+            self.index = faiss.IndexIVFPQ(
+                quantizer, self.dim, self.n_clusters, self.M, self.nbits,
+                faiss.METRIC_INNER_PRODUCT
+            )
+        else:
+            quantizer = faiss.IndexFlatL2(self.dim)
+            self.index = faiss.IndexIVFPQ(
+                quantizer, self.dim, self.n_clusters, self.M, self.nbits,
+                faiss.METRIC_L2
+            )
         
         train_size = min(self.n, max(self.n_clusters * 40, int(np.sqrt(self.n))))
         train_indices = np.random.RandomState(self.seed).choice(self.n, train_size, replace=False)
@@ -58,16 +75,51 @@ class IVFPQ:
         print(f"IVF-PQ index built in {self.build_time:.2f}s!")
     
     def search(self, query, N=10):
+        query = np.asarray(query, dtype=np.float32)
+        if query.ndim == 1:
+            query = query.reshape(1, -1)
+        
+        if self.metric == 'cosine':
+            query = self._normalize(query)
+        
         distances, indices = self.index.search(query, N)
-        return [(int(indices[0][i]), float(np.sqrt(distances[0][i])))
-                for i in range(len(indices[0])) if indices[0][i] != -1]
+        
+        results = []
+        for i in range(len(indices[0])):
+            if indices[0][i] == -1:
+                continue
+            
+            if self.metric == 'cosine':
+                dist = 1.0 - distances[0][i]
+            else:
+                dist = float(np.sqrt(distances[0][i]))
+            
+            results.append((int(indices[0][i]), dist))
+        
+        return results
     
     def batch_search(self, queries, N=10, verbose=True):
         queries = queries.astype(np.float32)
+        
+        if self.metric == 'cosine':
+            queries = self._normalize(queries)
+        
         distances, indices = self.index.search(queries, N)
+        
         results = []
         for qi in range(len(queries)):
-            query_results = [(int(indices[qi][i]), float(np.sqrt(distances[qi][i])))
-                        for i in range(len(indices[qi])) if indices[qi][i] != -1]
+            query_results = []
+            for i in range(len(indices[qi])):
+                if indices[qi][i] == -1:
+                    continue
+                
+                if self.metric == 'cosine':
+                    dist = 1.0 - distances[qi][i]
+                else:
+                    dist = float(np.sqrt(distances[qi][i]))
+                
+                query_results.append((int(indices[qi][i]), dist))
+            
             results.append(query_results)
+        
         return results

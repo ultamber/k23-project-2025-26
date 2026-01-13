@@ -84,18 +84,18 @@ def compute_map(
 class PerformanceTracker:
 
     def __init__(self):
-        self.query_times = []
-        self.ann_results = []
-        self.ground_truth = []
-        self.current_start = None
-        
         self.metrics = {}
-        
         self.current_method = None
         self.build_start = None
         self.search_start = None
         self.build_time = 0.0
         self.search_time = 0.0
+        
+        # Per-query tracking
+        self.per_query_times = {}  # method -> list of query times
+        self.query_start = None
+        self.query_times = []
+        self.ann_results = []
     
     def start_build(self, method_name: str = None):
         self.current_method = method_name
@@ -103,6 +103,7 @@ class PerformanceTracker:
         
         if method_name and method_name not in self.metrics:
             self.metrics[method_name] = {}
+            self
     
     def end_build(self, method_name: str = None):
         if self.build_start is None:
@@ -120,6 +121,9 @@ class PerformanceTracker:
     def start_search(self, method_name: str = None):
         self.current_method = method_name or self.current_method
         self.search_start = time.time()
+
+        if self.current_method not in self.per_query_times:
+            self.per_query_times[self.current_method] = []
     
     def end_search(self, method_name: str = None, num_queries: int = 0):
         if self.search_start is None:
@@ -129,7 +133,8 @@ class PerformanceTracker:
         self.search_time = time.time() - self.search_start
         self.search_start = None
         
-        qps = compute_qps(num_queries, self.search_time) if num_queries > 0 else 0.0
+        qps = num_queries / self.search_time if self.search_time > 0 else 0.0
+        avg_query_time = self.search_time / num_queries if num_queries > 0 else 0.0
         
         if method:
             if method not in self.metrics:
@@ -137,20 +142,32 @@ class PerformanceTracker:
             self.metrics[method]['search_time'] = self.search_time
             self.metrics[method]['num_queries'] = num_queries
             self.metrics[method]['qps'] = qps
-            self.metrics[method]['avg_query_time'] = self.search_time / num_queries if num_queries > 0 else 0.0
+            self.metrics[method]['avg_query_time'] = avg_query_time
     
     def start_query(self):
-        self.current_start = time.time()
+        self.query_start = time.time()
     
-    def end_query(self, ann_result: List[int], gt_result: List[int]):
-        if self.current_start is None:
-            raise RuntimeError("start_query() not called")
+    def end_query(self, method_name: str = None):
+        if self.query_start is None:
+            return 0.0
         
-        elapsed = time.time() - self.current_start
-        self.query_times.append(elapsed)
-        self.ann_results.append(ann_result)
-        self.ground_truth.append(gt_result)
-        self.current_start = None
+        method = method_name or self.current_method
+        query_time = time.time() - self.query_start
+        self.query_start = None
+        
+        if method:
+            if method not in self.per_query_times:
+                self.per_query_times[method] = []
+            self.per_query_times[method].append(query_time)
+        
+        return query_time
+    
+    def get_per_query_times(self, method_name: str) -> List[float]:
+        return self.per_query_times.get(method_name, [])
+    
+    def get_per_query_qps(self, method_name: str) -> List[float]:
+        times = self.per_query_times.get(method_name, [])
+        return [1.0 / t if t > 0 else 0.0 for t in times]
     
     def get_metrics(self, N: int = 50) -> Dict:
         num_queries = len(self.query_times)
@@ -249,3 +266,55 @@ def save_results(
     
     print(f"Results saved to: {output_file}")
 
+# def compute_recall_at_n(
+#     ann_results: List[int],
+#     ground_truth: List[int],
+#     N: int
+# ) -> float:
+#     ann_top_n = set(ann_results[:N])
+#     blast_top_n = set(ground_truth[:N])
+    
+#     if len(blast_top_n) == 0:
+#         return 0.0
+    
+#     intersection = ann_top_n & blast_top_n
+#     return len(intersection) / len(blast_top_n)
+
+def compute_recall_at_n(
+    ann_results: List[List[Tuple[int, float]]],
+    blast_results: Dict[int, List[Tuple]],
+    N: int
+) -> float:
+
+    total_recall = 0.0
+    num_queries = 0
+    
+    for query_idx, ann_neighbors in enumerate(ann_results):
+        if query_idx not in blast_results:
+            print(f"WARNING: query_idx {query_idx} not in blast_results")
+            continue
+        
+        # Get BLAST top-N indices - handle both 3 and 4 element tuples
+        blast_hits = blast_results[query_idx][:N]
+        blast_top_n = set([hit[0] for hit in blast_hits])  # hit[0] is always the index
+        
+        if not blast_top_n:
+            print(f"WARNING: No BLAST hits for query {query_idx}")
+            continue
+        
+        # Get ANN top-N indices
+        ann_top_n = set([idx for idx, _ in ann_neighbors[:N]])
+        
+        # Compute recall
+        intersection = len(blast_top_n & ann_top_n)
+        recall = intersection / len(blast_top_n)
+        
+        total_recall += recall
+        num_queries += 1
+    
+    print(f"Computed recall for {num_queries} queries")
+    
+    if num_queries == 0:
+        return 0.0
+    
+    return total_recall / num_queries

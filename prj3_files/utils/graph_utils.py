@@ -24,9 +24,6 @@ def find_kahip():
 KAHIP_BIN = find_kahip()
 
 def fallback_partition(csr, m):
-    """
-    Simple round-robin partitioner when KaHIP is unavailable.
-    """
     n = len(csr["vwgt"])
     labels = np.zeros(n, dtype=np.int32)
 

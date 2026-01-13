@@ -154,6 +154,7 @@ def train_mlp(
     
     model.to("cpu")
     return model
+# TODO : change metric to support cosine similarity
 
 class NeuralLSH:
 
@@ -164,7 +165,10 @@ class NeuralLSH:
         mlp_layers: int = 3,
         mlp_nodes: int = 128,
         mlp_dropout: float = 0.2,
-        seed: int = 42
+        seed: int = 42,
+        hidden_dims: List[int] = [128, 128],
+        epochs: int = 50,
+        metric: str = 'L2'
     ):
         self.m = m
         self.k_neighbors = k_neighbors
@@ -172,6 +176,9 @@ class NeuralLSH:
         self.mlp_nodes = mlp_nodes
         self.mlp_dropout = mlp_dropout
         self.seed = seed
+        self.epochs = epochs
+        self.hidden_dims = hidden_dims
+        self.metric = metric
         
         self.model = None
         self.inverted_index = None
@@ -189,7 +196,7 @@ class NeuralLSH:
         epochs: int = 50,
         batch_size: int = 128,
         lr: float = 1e-3,
-        use_kahip: bool = False,
+        use_kahip: bool = True,
         verbose: bool = True
     ):
 
@@ -215,6 +222,7 @@ class NeuralLSH:
         if use_kahip:
             # Try KaHIP (requires external binary)
             try:
+                print(f"Using KaHIP for partitioning...")
                 partitions = self._partition_kahip(knn_graph)
             except Exception as e:
                 if verbose:
@@ -223,6 +231,7 @@ class NeuralLSH:
                 partitions = self._partition_kmeans()
         else:
             # Use k-means
+            print(f"Using k-means for partitioning...")
             partitions = self._partition_kmeans()
         
         self.partitions = partitions
@@ -270,7 +279,6 @@ class NeuralLSH:
             print(f"\nNeural LSH index built!")
     
     def _build_knn_graph(self) -> np.ndarray:
-        """Build k-NN graph using sklearn."""
         nbrs = NearestNeighbors(
             n_neighbors=self.k_neighbors + 1,  # +1 for self
             metric='euclidean',
@@ -295,10 +303,6 @@ class NeuralLSH:
         return labels.astype(np.int32)
     
     def _partition_kahip(self, knn_graph: np.ndarray) -> np.ndarray:
-        """
-        Partition using KaHIP (if available).
-        This requires the KaHIP binary to be installed.
-        """
         # Import graph utilities from original implementation
         from utils.graph_utils import build_symmetric_graph, to_csr, run_kahip
         
@@ -430,7 +434,6 @@ class NeuralLSH:
     
     @staticmethod
     def load(path: str) -> 'NeuralLSH':
-        """Load index from disk."""
         path = Path(path)
         
         # Load metadata
@@ -471,7 +474,6 @@ class NeuralLSH:
         return nlsh
     
     def get_stats(self) -> Dict:
-        """Get index statistics."""
         partition_sizes = [
             len(self.inverted_index[p])
             for p in range(self.m)

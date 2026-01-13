@@ -252,5 +252,5 @@ void IVFPQ::search(const vector<VectorData> &queries, ofstream &out) {
         double tApprox = duration<double>(high_resolution_clock::now() - t0).count();
         calculatePerQueryMetrics(queries[qi].id, qi, tApprox, reranked, rlist, out);
     }
-    printSummary(Q, out);
+    // printSummary(Q, out);
 }

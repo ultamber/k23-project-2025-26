@@ -1,15 +1,3 @@
-#!/usr/bin/env python3
-"""
-Convert BLAST tabular output to pickle format for protein_search.py
-
-Usage:
-    python convert_blast_to_pickle.py \
-        --blast-file blast_results.txt \
-        --database-ids output.ids \
-        --query-ids query_vectors.ids \
-        --output blast_ground_truth.pkl
-"""
-
 import argparse
 import pickle
 from collections import defaultdict
@@ -17,14 +5,12 @@ from pathlib import Path
 
 
 def load_ids(ids_file):
-    """Load protein IDs from .ids file."""
     with open(ids_file, 'r') as f:
         ids = [line.strip() for line in f]
     return ids
 
 
 def get_accession(protein_id):
-    """Extract accession from UniProt ID (e.g., sp|P12345|NAME → P12345)."""
     if '|' in protein_id:
         parts = protein_id.split('|')
         if len(parts) >= 2:
@@ -33,16 +19,6 @@ def get_accession(protein_id):
 
 
 def parse_blast_results(blast_file, database_ids, query_ids, N=50):
-    """
-    Parse BLAST tabular output and convert to indices.
-    
-    Returns:
-        dict: {
-            'blast_results_ids': {query_id: [(hit_id, score, evalue), ...]},
-            'blast_results_indices': {query_idx: [(hit_idx, score, evalue), ...]},
-            'params': {'N': N, 'evalue': 0.01}
-        }
-    """
     # Create ID to index mappings
     db_id_to_idx = {get_accession(pid): i for i, pid in enumerate(database_ids)}
     query_id_to_idx = {get_accession(pid): i for i, pid in enumerate(query_ids)}
@@ -105,8 +81,8 @@ def main():
     print(f"\n[1] Loading protein IDs...")
     database_ids = load_ids(args.database_ids)
     query_ids = load_ids(args.query_ids)
-    print(f"    Database: {len(database_ids)} proteins")
-    print(f"    Queries: {len(query_ids)} proteins")
+    print(f"Database: {len(database_ids)} proteins")
+    print(f"Queries: {len(query_ids)} proteins")
     
     # Parse BLAST results
     print(f"\n[2] Parsing BLAST results...")
@@ -116,25 +92,25 @@ def main():
         query_ids,
         args.N
     )
-    print(f"    Found {len(results['blast_results_ids'])} queries with hits")
-    print(f"    Converted {len(results['blast_results_indices'])} to indices")
+    print(f"Found {len(results['blast_results_ids'])} queries with hits")
+    print(f"Converted {len(results['blast_results_indices'])} to indices")
     
     # Save to pickle
     print(f"\n[3] Saving to {args.output}...")
     with open(args.output, 'wb') as f:
         pickle.dump(results, f)
-    print(f"    Saved!")
+    print(f"Saved!")
     
     print("\n" + "="*70)
     print("Done!")
     print("="*70)
     print(f"\nNow run:")
     print(f"  python protein_search.py \\")
-    print(f"      -d output.npy \\")
-    print(f"      -q query_vectors.npy \\")
-    print(f"      -o results_with_blast.txt \\")
-    print(f"      -method all \\")
-    print(f"      --ground-truth {args.output}")
+    print(f"  -d output.npy \\")
+    print(f"  -q query_vectors.npy \\")
+    print(f"  -o results_with_blast.txt \\")
+    print(f"  -method all \\")
+    print(f"  --ground-truth {args.output}")
     print()
 
 

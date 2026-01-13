@@ -228,5 +228,5 @@ void Hypercube::search(const vector<VectorData> &queries, ofstream &out) {
         calculatePerQueryMetrics(queries[qi].id, qi, tApprox, distApprox, rlist, out);
     }
 
-    printSummary(Q, out);
+    // printSummary(Q, out);
 }

@@ -6,17 +6,18 @@ import time
 import pickle
 import tempfile
 from typing import Dict, List, Tuple, Optional
-
+from cpp_wrapper import CppSearchWrapper, run_cpp_method
 from methods.lsh import LSH
 from methods.ivfflat import IVFFlat
 from methods.ivfpq import IVFPQ
 from methods.neural_lsh import NeuralLSH
 from methods.hypercube import Hypercube
-from utils.fasta_loader import load_fasta
-from utils.evaluation import PerformanceTracker
+from utils.fasta_loader import get_accession, load_fasta
+from utils.evaluation import PerformanceTracker, compute_recall_at_n
 from utils.output_formatter import format_output_txt
 from utils.results_writer import write_method_results, write_comparison_summary
-
+from utils.blast_runner import BLASTRunner
+from utils.protein_fvecs import export_for_cpp, save_fvecs, load_fvecs
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -98,31 +99,53 @@ def parse_args():
         '--pfam-map',
         help='Pfam mapping file (.tsv) for biological evaluation'
     )
-
+    parser.add_argument(
+        '--export-cpp',
+        help='Export embeddings to directory in .fvecs format for C++ search'
+    )
+    parser.add_argument(
+        '--use-cpp',
+        action='store_true',
+        help='Use C++ implementations instead of Python'
+    )
+    parser.add_argument(
+        '--cpp-binary',
+        default='../bin/search',
+        help='Path to C++ search binary (default: ../bin/search)'
+    )
+    parser.add_argument(
+        '--cpp-nlsh-script',
+        default='./nlsh_search.py',
+        help='Path to Neural LSH Python script'
+    )
+    parser.add_argument(
+        '--export-fvecs',
+        help='Export embeddings to .fvecs format at this directory (for C++ use)'
+    )
     # LSH
-    parser.add_argument('--lsh-L', type=int, default=10, help='LSH: number of hash tables')
-    parser.add_argument('--lsh-k', type=int, default=4, help='LSH: hash functions per table')
-    parser.add_argument('--lsh-w', type=float, default=4.0, help='LSH: bucket width')
-    
+    parser.add_argument('--lsh-L', type=int, default=8, help='LSH: number of hash tables')
+    parser.add_argument('--lsh-k', type=int, default=6, help='LSH: hash functions per table')
+    parser.add_argument('--lsh-w', type=float, default=1.0, help='LSH: bucket width')
     # Hypercube
-    parser.add_argument('--hc-kproj', type=int, help='Hypercube: projection dimension')
-    parser.add_argument('--hc-w', type=float, default=4.0, help='Hypercube: bucket width')
-    parser.add_argument('--hc-max-probes', type=int, default=100, help='Hypercube: max probes')
-    
+    parser.add_argument('--hc-kproj', default=12, type=int, help='Hypercube: projection dimension')
+    parser.add_argument('--hc-w', type=float, default=1.5, help='Hypercube: bucket width')
+    parser.add_argument('--hc-max-probes', type=int, default=2, help='Hypercube: max probes')
+    parser.add_argument('--hc-M', type=int, default=5000, help='Hypercube: max candidates')
     # IVF
-    parser.add_argument('--ivf-n-clusters', type=int, help='IVF: number of clusters')
-    parser.add_argument('--ivf-n-probe', type=int, default=10, help='IVF: number of probes')
-    parser.add_argument('--ivf-M', type=int, default=8, help='IVF-PQ: number of subvectors')
-    
+    parser.add_argument('--ivf-n-clusters', default=1000, type=int, help='IVF: number of clusters')
+    parser.add_argument('--ivf-n-probe', type=int, default=50, help='IVF: number of probes')
+    parser.add_argument('--ivf-M', type=int, default=16, help='IVF-PQ: number of subvectors')
+    parser.add_argument('--ivf-nbits', type=int, default=8, help='IVF-PQ: bits per subvector')
     # Neural LSH
-    parser.add_argument('--nlsh-m', type=int, default=100, help='Neural LSH: partitions')
+    parser.add_argument('--nlsh-m', type=int, default=400, help='Neural LSH: partitions')
     parser.add_argument('--nlsh-k', type=int, default=25, help='Neural LSH: k-NN')
-    parser.add_argument('--nlsh-T', type=int, default=10, help='Neural LSH: probes')
-    parser.add_argument('--nlsh-epochs', type=int, default=50, help='Neural LSH: training epochs')
-    
+    parser.add_argument('--nlsh-hidden-dims', type=list, default=[128, 128], help='Neural LSH: hidden dimensions')
+    parser.add_argument('--nlsh-T', type=int, default=50, help='Neural LSH: probes')
+    parser.add_argument('--nlsh-epochs', type=int, default=15, help='Neural LSH: training epochs')
     # Misc
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
-    
+    parser.add_argument('--metric', choices=['L2', 'cosine'], default='L2',
+                    help='Distance metric (default: L2)')
     return parser.parse_args()
 
 
@@ -147,6 +170,8 @@ def load_embeddings(filepath: str) -> Tuple[np.ndarray, Optional[List[str]], Opt
 
     if path.suffix == '.npy':
         embeddings = np.load(filepath)
+    elif path.suffix == '.fvecs':
+        embeddings = load_fvecs(filepath)
     elif path.suffix == '.dat':
         try:
             embeddings = np.load(filepath)
@@ -156,19 +181,23 @@ def load_embeddings(filepath: str) -> Tuple[np.ndarray, Optional[List[str]], Opt
         raise ValueError(f"Unknown embedding format: {path.suffix}")
     
     ids = None
+    txt_file = path.with_suffix('.txt')
     ids_file = path.with_suffix('.ids')
-    if ids_file.exists():
+    
+    if txt_file.exists():
+        with open(txt_file, 'r') as f:
+            ids = [line.strip() for line in f if line.strip()]
+    elif ids_file.exists():
         with open(ids_file, 'r') as f:
-            ids = [line.strip() for line in f]
+            ids = [line.strip() for line in f if line.strip()]
     
     sequences = None
     fasta_file = path.with_suffix('.fasta')
     if fasta_file.exists():
-        seqs = load_fasta(str(fasta_file))
-        sequences = seqs
+        from utils.fasta_loader import load_fasta
+        sequences = load_fasta(str(fasta_file))
     
     return embeddings, ids, sequences
-
 
 def embed_fasta(
     fasta_file: str,
@@ -176,8 +205,6 @@ def embed_fasta(
     batch_size: int = 32,
     device: str = 'auto'
 ) -> Tuple[np.ndarray, List[str]]:
-    """Generate embeddings from FASTA file using ESM-2."""
-    
     from protein_embed import ESM2Embedder
     
     # Create embedder
@@ -212,35 +239,31 @@ def run_blast_search(
     evalue: float = 0.01,
     threads: int = 8
 ) -> Dict:
-    print(f"\n{'='*70}")
-    print(f"RUNNING BLAST SEARCH")
-    print(f"{'='*70}")
-    
-    from utils.blast_runner import BLASTRunner
     
     blast = BLASTRunner(
         db_fasta=database_fasta,
         evalue_threshold=evalue
     )
     
-    # Build database
     blast.build_database(database_fasta)
     
-    # Run search
     results = blast.search_fasta(
         query_fasta=query_fasta,
         N=N,
         num_threads=threads
     )
     
-    # Convert to indices if IDs provided
     blast_results_indices = None
     if database_ids and query_ids:
+        db_id_to_index = {}
+        for i, pid in enumerate(database_ids):
+            db_id_to_index[pid] = i
+            db_id_to_index[get_accession(pid)] = i
         
-        db_id_to_index = {pid: i for i, pid in enumerate(database_ids)}
-        query_id_to_index = {pid: i for i, pid in enumerate(query_ids)}
-        
-        from utils.fasta_loader import get_accession
+        query_id_to_index = {}
+        for i, pid in enumerate(query_ids):
+            query_id_to_index[pid] = i
+            query_id_to_index[get_accession(pid)] = i
         
         blast_results_indices = {}
         for query_id, hits in results.items():
@@ -248,15 +271,24 @@ def run_blast_search(
             if query_acc in query_id_to_index:
                 query_idx = query_id_to_index[query_acc]
                 hit_indices = []
-                for hit_id, score, evalue in hits:
+                
+                for hit in hits:
+                    hit_id = hit[0]
+                    score = hit[1]
+                    evalue_val = hit[2]
+                    pident = hit[3] if len(hit) > 3 else None
+                    
                     hit_acc = get_accession(hit_id)
                     if hit_acc in db_id_to_index:
                         hit_idx = db_id_to_index[hit_acc]
-                        hit_indices.append((hit_idx, score, evalue))
+                        if pident is not None:
+                            hit_indices.append((hit_idx, score, evalue_val, pident))
+                        else:
+                            hit_indices.append((hit_idx, score, evalue_val))
+                
                 if hit_indices:
                     blast_results_indices[query_idx] = hit_indices
     
-    # Cleanup
     blast.cleanup()
     
     print(f"BLAST search completed")
@@ -328,7 +360,7 @@ def main():
     if args.pfam_map:
         from utils.pfam_loader import load_pfam_mapping
         pfam_mapping = load_pfam_mapping(args.pfam_map)
-        print(f"\nResolving queries...")
+    print(f"\nResolving queries...")
     
     query_embeddings = None
     query_ids = None
@@ -385,19 +417,60 @@ def main():
         if query_seqs:
             query_seqs = query_seqs[:args.max_queries]
         print(f"Limited to {len(query_embeddings)} queries")
+
+    if args.export_cpp:
+        export_for_cpp(
+            output_dir=args.export_cpp,
+            database_embeddings=database_embeddings,
+            database_ids=database_ids,
+            query_embeddings=query_embeddings,
+            query_ids=query_ids
+        )
+        print(f"\\nExported to {args.export_cpp}/ for C++ processing")
+        
+        if not args.method:
+            print("Use --method to also run Python search, or use C++ binary")
+            return
+        
+    # Database ID mappings
+    db_id_to_index = {}
+    db_acc_to_index = {}
+    if database_ids:
+        for i, pid in enumerate(database_ids):
+            db_id_to_index[pid] = i
+            acc = get_accession(pid)
+            db_acc_to_index[acc] = i
+        print(f"Created database ID mappings: {len(database_ids)} proteins")
     
+    # Query ID mappings
+    query_id_to_index = {}
+    query_acc_to_index = {}
+    if query_ids:
+        for i, pid in enumerate(query_ids):
+            query_id_to_index[pid] = i
+            acc = get_accession(pid)
+            query_acc_to_index[acc] = i
+        print(f"Created query ID mappings: {len(query_ids)} proteins")
+
     print(f"\nLoading BLAST ground truth...")
     
     blast_results = None
+    blast_identity = None
     
     if args.ground_truth:
-        # Load existing ground truth
         with open(args.ground_truth, 'rb') as f:
             blast_results = pickle.load(f)
         print(f"Loaded from {args.ground_truth}")
+        
+        blast_identity = _extract_blast_identity(
+            blast_results, 
+            db_acc_to_index, 
+            query_acc_to_index
+        )
+        if blast_identity:
+            print(f"Extracted BLAST identity for {len(blast_identity)} queries")
     
     elif args.run_blast and database_fasta and query_fasta:
-        # Generate BLAST ground truth on-the-fly
         print(f"No ground truth provided, running BLAST...")
         blast_results = run_blast_search(
             database_fasta=database_fasta,
@@ -408,7 +481,12 @@ def main():
             evalue=args.blast_evalue,
             threads=args.blast_threads
         )
-    
+        
+        blast_identity = _extract_blast_identity(
+            blast_results,
+            db_acc_to_index,
+            query_acc_to_index
+        )
     else:
         print(f"No ground truth available (use --run-blast or --ground-truth)")
 
@@ -428,82 +506,215 @@ def main():
             'neural': 'neural-lsh',
         }
         methods_to_run = [method_map.get(args.method, args.method)]
+    if args.use_cpp:
+        print(f"\n  Using C++ implementations ({args.cpp_binary})")
+        wrapper = CppSearchWrapper(
+            binary_path=args.cpp_binary,
+            nlsh_script=args.cpp_nlsh_script,
+            dataset_type='protein'
+        )
+        
+        for method in methods_to_run:
+            print(f"\n  Running {method.upper()} (C++)...")
+            
+            try:
+                if method == 'lsh':
+                    result = wrapper.search_lsh(
+                        database=database_embeddings,
+                        queries=query_embeddings,
+                        L=args.lsh_L,
+                        k=args.lsh_k,
+                        w=args.lsh_w,
+                        N=args.N
+                    )
+                elif method == 'hypercube':
+                    result = wrapper.search_hypercube(
+                        database=database_embeddings,
+                        queries=query_embeddings,
+                        kproj=args.hc_kproj,
+                        w=args.hc_w,
+                        M=args.hc_M,
+                        probes=args.hc_max_probes,
+                        N=args.N
+                    )
+                elif method == 'ivfflat':
+                    result = wrapper.search_ivfflat(
+                        database=database_embeddings,
+                        queries=query_embeddings,
+                        kclusters=args.ivf_n_clusters,
+                        nprobe=args.ivf_n_probe,
+                        N=args.N
+                    )
+                elif method == 'ivfpq':
+                    result = wrapper.search_ivfpq(
+                        database=database_embeddings,
+                        queries=query_embeddings,
+                        kclusters=args.ivf_n_clusters,
+                        nprobe=args.ivf_n_probe,
+                        Msub=args.ivf_M,
+                        nbits=args.ivf_nbits,
+                        N=args.N
+                    )
+                elif method in ['neural-lsh', 'neural']:
+                    # Neural LSH needs index directory
+                    print(f"  WARNING: Neural LSH requires pre-built index, skipping C++")
+                    continue
+                
+                # Store results
+                all_results[method] = result['results']
+                
+                # Update tracker metrics
+                tracker.metrics[method] = {
+                    'build_time': 0,
+                    'search_time': result['elapsed'],
+                    'qps': len(query_embeddings) / result['elapsed'] if result['elapsed'] > 0 else 0,
+                    **result['summary']
+                }
+                
+                print(f"  Completed in {result['elapsed']:.2f}s")
+                print(f"  QPS: {tracker.metrics[method]['qps']:.2f}")
+                if 'recall_at_n' in result['summary']:
+                    print(f"  Recall@N: {result['summary']['recall_at_n']:.4f}")
+                
+            except Exception as e:
+                print(f"  ERROR running {method}: {e}")
+                continue
+        
+        wrapper.cleanup()
     
-    for method in methods_to_run:
-        print(f"\n  Running {method.upper()}...")
+    else:
+        for method in methods_to_run:
+            print(f"\n  Running {method.upper()}...")
+            
+            # Build index
+            if method == 'lsh':
+                index = LSH(
+                    L=args.lsh_L,
+                    k=args.lsh_k,
+                    w=args.lsh_w,
+                    seed=args.seed,
+                    metric=args.metric
+                )
+            
+            elif method == 'hypercube':
+                index = Hypercube(
+                    kproj=args.hc_kproj,
+                    w=args.hc_w,
+                    max_probes=args.hc_max_probes,
+                    seed=args.seed,
+                    M=args.hc_M,
+                    metric=args.metric
+                )
+            
+            elif method == 'ivfflat':
+                index = IVFFlat(
+                    n_clusters=args.ivf_n_clusters,
+                    n_probe=args.ivf_n_probe,
+                    seed=args.seed,
+                    metric=args.metric
+                )
+            
+            elif method == 'ivfpq':
+                index = IVFPQ(
+                    n_clusters=args.ivf_n_clusters,
+                    n_probe=args.ivf_n_probe,
+                    M=args.ivf_M,
+                    seed=args.seed,
+                    nbits=args.ivf_nbits,
+                    metric=args.metric
+                )
+            
+            elif method == 'neural-lsh':
+                index = NeuralLSH(
+                    m=args.nlsh_m,
+                    k_neighbors=args.nlsh_k,
+                    seed=args.seed,
+                    hidden_dims=args.nlsh_hidden_dims,
+                    epochs=args.nlsh_epochs,
+                    metric=args.metric
+                )
+            
+            # Build or load index 
+            tracker.start_build(method)
+            if method == 'neural-lsh':
+                index.build_index(database_embeddings, epochs=args.nlsh_epochs,use_kahip=True)
+            else:
+                index.build_index(database_embeddings)
+            tracker.end_build()
+            
+            # Search
+            tracker.start_search(method)
+
+            results = []
+            for q_idx in range(len(query_embeddings)):
+                tracker.start_query()
+                
+                if method == 'neural-lsh':
+                    query_result = index.search(query_embeddings[q_idx], N=args.N, T=args.nlsh_T)
+                else:
+                    query_result = index.search(query_embeddings[q_idx], N=args.N)
+                
+                tracker.end_query(method)
+                results.append(query_result)
+            
+            tracker.end_search(method, len(query_embeddings))
+            
+            all_results[method] = results
+            
+            print(f"  Completed in {tracker.metrics[method]['search_time']:.2f}s")
+            print(f"  QPS: {tracker.metrics[method]['qps']:.2f}")
         
-        # Build index
-        if method == 'lsh':
-            index = LSH(
-                L=args.lsh_L,
-                k=args.lsh_k,
-                w=args.lsh_w,
-                seed=args.seed
-            )
+    # blast_identity = None
+    # print(f"\n--- DEBUG ---")
+    # print(f"blast_results is not None: {blast_results is not None}")
+    # if blast_results:
+    #     print(f"Keys in blast_results: {blast_results.keys()}")
+    #     print(f"'blast_results_indices' in blast_results: {'blast_results_indices' in blast_results}")
+    # print(f"--- END DEBUG ---\n")
+    # if blast_results and 'blast_results_indices' in blast_results:
+    #     blast_identity = {}
+    #     blast_indices = blast_results['blast_results_indices']
         
-        elif method == 'hypercube':
-            index = Hypercube(
-                kproj=args.hc_kproj,
-                w=args.hc_w,
-                max_probes=args.hc_max_probes,
-                seed=args.seed
-            )
-        
-        elif method == 'ivfflat':
-            index = IVFFlat(
-                n_clusters=args.ivf_n_clusters,
-                n_probe=args.ivf_n_probe,
-                seed=args.seed
-            )
-        
-        elif method == 'ivfpq':
-            index = IVFPQ(
-                n_clusters=args.ivf_n_clusters,
-                n_probe=args.ivf_n_probe,
-                M=args.ivf_M,
-                seed=args.seed
-            )
-        
-        elif method == 'neural-lsh':
-            index = NeuralLSH(
-                m=args.nlsh_m,
-                k_neighbors=args.nlsh_k,
-                seed=args.seed
-            )
-        
-        # Build or load index 
-        tracker.start_build(method)
-        if method == 'neural-lsh':
-            index.build_index(database_embeddings, epochs=args.nlsh_epochs)
-        else:
-            index.build_index(database_embeddings)
-        tracker.end_build()
-        
-        # Search
-        tracker.start_search(method)
-        if method == 'neural-lsh':
-            results = index.batch_search(query_embeddings, N=args.N, T=args.nlsh_T)
-        else:
-            results = index.batch_search(query_embeddings, N=args.N)
-        tracker.end_search(method, len(query_embeddings))
-        
-        all_results[method] = results
-        
-        print(f"  Completed in {tracker.metrics[method]['search_time']:.2f}s")
-        print(f"  QPS: {tracker.metrics[method]['qps']:.2f}")
+    # print(f"  BLAST indices has {len(blast_indices)} queries")
+    # print(f"  ANN results has {len(all_results)} methods")
     
+    # for method, results in all_results.items():
+    #     print(f"  Evaluating {method}...")
+    #     print(f"Results has {len(results)} queries")
+        
+    #     # Compute recall@N
+    #     recall = compute_recall_at_n(results, blast_indices, args.N)
+    #     tracker.metrics[method]['recall_at_n'] = recall
+        
+    #     print(f"{method}: Recall@{args.N} = {recall:.4f}")
+    #     # If BLAST results include pident (4th element in tuple)
+    #     if 'blast_results_ids' in blast_results:
+    #         for query_id, hits in blast_results['blast_results_ids'].items():
+    #             # Get query index
+    #             if query_ids:
+    #                 query_acc = get_accession(query_id)
+    #                 if query_acc in query_id_to_index:
+    #                     q_idx = query_id_to_index[query_acc]
+    #                     blast_identity[q_idx] = {}
+                        
+    #                     for hit in hits:
+    #                         if len(hit) >= 4:  # (hit_id, bitscore, evalue, pident)
+    #                             hit_id, bitscore, evalue, pident = hit[:4]
+    #                             hit_acc = get_accession(hit_id)
+    #                             if hit_acc in db_id_to_index:
+    #                                 n_idx = db_id_to_index[hit_acc]
+    #                                 blast_identity[q_idx][n_idx] = pident
+    # else:
+    #     print("WARNING: Skipping BLAST evaluation - no blast_results_indices!")
+
     if blast_results and 'blast_results_indices' in blast_results:
-        print(f"\nEvaluating against BLAST...")
-        
         blast_indices = blast_results['blast_results_indices']
-        
         for method, results in all_results.items():
-            # Compute recall@N
             recall = compute_recall_at_n(results, blast_indices, args.N)
             tracker.metrics[method]['recall_at_n'] = recall
-            
-            print(f"{method}: Recall@{args.N} = {recall:.4f}")
-    
+            print(f"  {method}: Recall@{args.N} = {recall:.4f}")
+    else:
+        print("WARNING: Skipping BLAST evaluation - no blast_results_indices!")
     print(f"\nSaving results...")
     
     output_path = Path(args.output)
@@ -549,9 +760,29 @@ def main():
             json.dump(results_dict, f, indent=2, default=str)
         
         print(f"Results saved to {output_path}/")
+
+    # Prepare individual method result files
     output_dir.mkdir(parents=True, exist_ok=True)
+        
     # Write individual method results
     for method_name, method_results in all_results.items():
+        method_slug = method_name.lower().replace(' ', '_').replace('-', '_')
+        if(method_name == "lsh"):
+            args.lsh_params = f"L{args.lsh_L}_k{args.lsh_k}_w{args.lsh_w}_"
+            output_file = output_dir / f"{method_slug}_lsh_{args.lsh_params}results.txt"
+        elif(method_name == "hypercube"):
+            args.hc_params = f"kproj{args.hc_kproj}_w{args.hc_w}_M{args.hc_M}_probes{args.hc_max_probes}_"
+            output_file = output_dir / f"{method_slug}_hc_{args.hc_params}results.txt"
+        elif(method_name == "ivfflat"):
+            args.ivfflat_params = f"nclusters{args.ivf_n_clusters}_nprobe{args.ivf_n_probe}_"
+            output_file = output_dir / f"{method_slug}_ivfflat_{args.ivfflat_params}results.txt"
+        elif(method_name == "ivfpq"):
+            args.ivfpq_params = f"nclusters{args.ivf_n_clusters}_nprobe{args.ivf_n_probe}_M{args.ivf_M}_nbits{args.ivf_nbits}_"
+            output_file = output_dir / f"{method_slug}_ivfpq_{args.ivfpq_params}results.txt"
+        elif(method_name == "neural-lsh"):
+            args.nlsh_params = f"m{args.nlsh_m}_k{args.nlsh_k}_epochs{args.nlsh_epochs}_"
+            output_file = output_dir / f"{method_slug}_nlsh_{args.nlsh_params}results.txt"
+
         write_method_results(
             method_name=method_name,
             output_dir=str(output_dir),
@@ -561,13 +792,16 @@ def main():
             database_ids=database_ids,
             blast_results=blast_results,
             pfam_mapping=pfam_mapping,
+            blast_identity=blast_identity,
             query_seqs=query_seqs,
             database_seqs=database_seqs,
+            per_query_times=tracker.get_per_query_times(method_name),
             N=args.N,
-            display_n=10
+            display_n=10,
+            save_raw_data=True,
+            output_file=output_file
         )
     
-    # Write comparison summary
     write_comparison_summary(
         output_dir=str(output_dir),
         all_metrics=tracker.metrics,
@@ -578,40 +812,86 @@ def main():
     print(f"{'='*70}\n")
 
 
-def compute_recall_at_n(
-    ann_results: List[List[Tuple[int, float]]],
-    blast_results: Dict[int, List[Tuple[int, float, float]]],
-    N: int
-) -> float:
+# def compute_recall_at_n(
+#     ann_results: List[List[Tuple[int, float]]],
+#     blast_results: Dict[int, List[Tuple]],
+#     N: int
+# ) -> float:
 
-    total_recall = 0.0
-    num_queries = 0
+#     total_recall = 0.0
+#     num_queries = 0
     
-    for query_idx, ann_neighbors in enumerate(ann_results):
-        if query_idx not in blast_results:
-            continue
+#     for query_idx, ann_neighbors in enumerate(ann_results):
+#         if query_idx not in blast_results:
+#             print(f"WARNING: query_idx {query_idx} not in blast_results")
+#             continue
         
-        # Get BLAST top-N indices
-        blast_top_n = set([hit_idx for hit_idx, _, _ in blast_results[query_idx][:N]])
+#         # Get BLAST top-N indices - handle both 3 and 4 element tuples
+#         blast_hits = blast_results[query_idx][:N]
+#         blast_top_n = set([hit[0] for hit in blast_hits])  # hit[0] is always the index
         
-        if not blast_top_n:
-            continue
+#         if not blast_top_n:
+#             print(f"WARNING: No BLAST hits for query {query_idx}")
+#             continue
         
-        # Get ANN top-N indices
-        ann_top_n = set([idx for idx, _ in ann_neighbors[:N]])
+#         # Get ANN top-N indices
+#         ann_top_n = set([idx for idx, _ in ann_neighbors[:N]])
         
-        # Compute recall
-        intersection = len(blast_top_n & ann_top_n)
-        recall = intersection / len(blast_top_n)
+#         # Compute recall
+#         intersection = len(blast_top_n & ann_top_n)
+#         recall = intersection / len(blast_top_n)
         
-        total_recall += recall
-        num_queries += 1
+#         total_recall += recall
+#         num_queries += 1
     
-    if num_queries == 0:
-        return 0.0
+#     print(f"Computed recall for {num_queries} queries")
     
-    return total_recall / num_queries
+#     if num_queries == 0:
+#         return 0.0
+    
+#     return total_recall / num_queries
 
+def _extract_blast_identity(
+    blast_results: Optional[Dict],
+    db_acc_to_index: Dict[str, int],
+    query_acc_to_index: Dict[str, int]
+) -> Optional[Dict[int, Dict[int, float]]]:
+    
+    if not blast_results:
+        return None
+        
+    blast_identity = {}
+    
+    if 'blast_results_ids' in blast_results:
+        for query_id, hits in blast_results['blast_results_ids'].items():
+            query_acc = get_accession(query_id)
+            
+            if query_acc not in query_acc_to_index:
+                continue
+            
+            q_idx = query_acc_to_index[query_acc]
+            blast_identity[q_idx] = {}
+            
+            for hit in hits:
+                if len(hit) >= 4:
+                    hit_id, bitscore, evalue, pident = hit[0], hit[1], hit[2], hit[3]
+                elif len(hit) >= 3:
+                    hit_id, bitscore, evalue = hit[0], hit[1], hit[2]
+                    pident = None
+                else:
+                    continue
+                
+                hit_acc = get_accession(hit_id)
+                
+                if hit_acc in db_acc_to_index:
+                    n_idx = db_acc_to_index[hit_acc]
+                    if pident is not None:
+                        blast_identity[q_idx][n_idx] = pident
+    
+    if not blast_identity or all(len(v) == 0 for v in blast_identity.values()):
+        return None
+    
+    return blast_identity
 
 if __name__ == '__main__':
     main()

@@ -140,6 +140,6 @@ if __name__ == '__main__':
             desc = PFAM_DESCRIPTIONS.get(pfam, 'Unknown')
             print(f"  {pfam} ({desc}): {len(members)} proteins")
             for m in members[:3]:
-                print(f"    - {m}")
+                print(f"- {m}")
             if len(members) > 3:
-                print(f"    ... and {len(members)-3} more")
+                print(f"... and {len(members)-3} more")

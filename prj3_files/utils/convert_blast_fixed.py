@@ -74,8 +74,8 @@ def parse_blast_results(blast_file, database_ids, query_ids, N=50):
     db_mapping = create_id_mapping(database_ids)
     query_mapping = create_id_mapping(query_ids)
     
-    print(f"    Database mapping: {len(db_mapping)} entries")
-    print(f"    Query mapping: {len(query_mapping)} entries")
+    print(f"Database mapping: {len(db_mapping)} entries")
+    print(f"Query mapping: {len(query_mapping)} entries")
     
     # Parse BLAST results
     blast_results_ids = defaultdict(list)
@@ -133,16 +133,16 @@ def parse_blast_results(blast_file, database_ids, query_ids, N=50):
                 blast_results_indices[query_idx].append((hit_idx, bitscore, evalue))
                 matches_found += 1
     
-    print(f"    Parsed {line_num} BLAST lines")
-    print(f"    Matched {matches_found} alignments")
+    print(f"Parsed {line_num} BLAST lines")
+    print(f"Matched {matches_found} alignments")
     
     if query_misses:
-        print(f"    ⚠️  {len(query_misses)} unique query IDs not found")
-        print(f"       Examples: {list(query_misses)[:3]}")
+        print(f"⚠️  {len(query_misses)} unique query IDs not found")
+        print(f"   Examples: {list(query_misses)[:3]}")
     
     if db_misses:
-        print(f"    ⚠️  {len(db_misses)} unique hit IDs not found")
-        print(f"       Examples: {list(db_misses)[:3]}")
+        print(f"⚠️  {len(db_misses)} unique hit IDs not found")
+        print(f"   Examples: {list(db_misses)[:3]}")
     
     return {
         'blast_results_ids': dict(blast_results_ids),
@@ -171,10 +171,10 @@ def main():
     print(f"\n[1] Loading protein IDs...")
     database_ids = load_ids(args.database_ids)
     query_ids = load_ids(args.query_ids)
-    print(f"    Database: {len(database_ids)} proteins")
-    print(f"    Queries: {len(query_ids)} proteins")
-    print(f"    Example DB ID: {database_ids[0]}")
-    print(f"    Example Query ID: {query_ids[0]}")
+    print(f"Database: {len(database_ids)} proteins")
+    print(f"Queries: {len(query_ids)} proteins")
+    print(f"Example DB ID: {database_ids[0]}")
+    print(f"Example Query ID: {query_ids[0]}")
     
     # Parse BLAST results
     print(f"\n[2] Parsing BLAST results...")
@@ -184,8 +184,8 @@ def main():
         query_ids,
         args.N
     )
-    print(f"    Found {len(results['blast_results_ids'])} queries with hits")
-    print(f"    Converted {len(results['blast_results_indices'])} to indices")
+    print(f"Found {len(results['blast_results_ids'])} queries with hits")
+    print(f"Converted {len(results['blast_results_indices'])} to indices")
     
     if len(results['blast_results_indices']) == 0:
         print("\n    ❌ ERROR: No indices matched!")
@@ -201,7 +201,7 @@ def main():
     print(f"\n[3] Saving to {args.output}...")
     with open(args.output, 'wb') as f:
         pickle.dump(results, f)
-    print(f"    Saved!")
+    print(f"Saved!")
     
     print("\n" + "="*70)
     print("Done!")
@@ -209,11 +209,11 @@ def main():
     print(f"\nConverted {len(results['blast_results_indices'])} queries successfully!")
     print(f"\nNow run:")
     print(f"  python protein_search.py \\")
-    print(f"      -d output.npy \\")
-    print(f"      -q query_vectors.npy \\")
-    print(f"      -o results_with_blast.txt \\")
-    print(f"      -method all \\")
-    print(f"      --ground-truth {args.output}")
+    print(f"  -d output.npy \\")
+    print(f"  -q query_vectors.npy \\")
+    print(f"  -o results_with_blast.txt \\")
+    print(f"  -method all \\")
+    print(f"  --ground-truth {args.output}")
     print()
 
 

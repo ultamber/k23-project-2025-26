@@ -1,8 +1,10 @@
+from itertools import combinations
 import numpy as np
 from typing import List, Tuple, Dict
 from collections import defaultdict
 import time
 
+# TODO : change metric to support cosine similarity
 
 class LSH:
 
@@ -12,7 +14,8 @@ class LSH:
         k: int = 4,
         w: float = 4.0,
         tableSize: int = None,
-        seed: int = 42
+        seed: int = 42,
+        metric: str = 'L2'
     ):
 
         self.L = L
@@ -20,6 +23,7 @@ class LSH:
         self.w = w
         self.tableSize = tableSize
         self.seed = seed
+        self.metric = metric.lower()
         
         self.dim = None
         self.n = None
@@ -32,11 +36,22 @@ class LSH:
         
         self.rng = np.random.RandomState(seed)
     
+    def _normalize(self, vectors: np.ndarray) -> np.ndarray:
+        if vectors.ndim == 1:
+            norm = np.linalg.norm(vectors)
+            return vectors / max(norm, 1e-8)
+        norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+        norms = np.maximum(norms, 1e-8)
+        return vectors / norms
+
     def build_index(self, embeddings: np.ndarray):
 
         self.n, self.dim = embeddings.shape
-        self.embeddings = embeddings
-        
+        self.embeddings = embeddings.astype(np.float32)
+        # Normalize for cosine similarity
+        if self.metric == 'cosine':
+            self.embeddings = self._normalize(self.embeddings)
+
         if self.tableSize is None:
             self.tableSize = max(1, self.n // 4)
         
@@ -56,7 +71,7 @@ class LSH:
         # Insert all points into hash tables
         print("  Inserting points...")
         for idx in range(self.n):
-            vec = embeddings[idx]
+            vec = self.embeddings[idx]
             for li in range(self.L):
                 # Compute ID(p) using hash function
                 ID_p = self._compute_ID(vec, li)
@@ -70,32 +85,42 @@ class LSH:
         print(f"LSH index built!")
     
     def _generate_hash_functions(self):
-
-        # Random projection vectors a ~ N(0,1)
-        self.a_ = self.rng.randn(self.L, self.k, self.dim).astype(np.float32)
-        
-        # Random shifts t ~ Uniform(0, w)
-        self.t_ = self.rng.uniform(0, self.w, size=(self.L, self.k)).astype(np.float32)
-        
-        # Random coefficients r for hash combination
-        self.r_ = self.rng.randint(1, self.MOD_M, size=(self.L, self.k), dtype=np.int64)
+        if self.metric == 'cosine':
+            # SimHash: random hyperplanes
+            self.a_ = self.rng.randn(self.L, self.k, self.dim).astype(np.float32)
+            # No shifts or random coefficients needed for SimHash
+        else:
+            # p-stable LSH for L2
+            self.a_ = self.rng.randn(self.L, self.k, self.dim).astype(np.float32)
+            self.t_ = self.rng.uniform(0, self.w, size=(self.L, self.k)).astype(np.float32)
+            self.r_ = self.rng.randint(1, self.MOD_M, size=(self.L, self.k), dtype=np.int64)
     
     def _compute_ID(self, v: np.ndarray, li: int) -> int:
-
-        ID = 0
-        
-        for j in range(self.k):
-            # Compute dot product for projection
-            dot = np.dot(self.a_[li][j], v)
-            
-            # Apply LSH hash function: h(p) = floor((a·p + t)/w)
-            h_j = int(np.floor((dot + self.t_[li][j]) / self.w))
-            
-            # Combine using random coefficients: ID = Σ r_i*h_i(p) mod M
-            ID = (ID + self.r_[li][j] * h_j) % self.MOD_M
-        
+        if self.metric == 'cosine':
+            # SimHash: sign of dot product
+            ID = 0
+            for j in range(self.k):
+                dot = np.dot(self.a_[li][j], v)
+                if dot >= 0:
+                    ID |= (1 << j)
+            return ID
+        else:
+            # p-stable LSH for L2
+            ID = 0
+            for j in range(self.k):
+                dot = np.dot(self.a_[li][j], v)
+                h_j = int(np.floor((dot + self.t_[li][j]) / self.w))
+                ID = (ID + self.r_[li][j] * h_j) % self.MOD_M
         return ID
     
+    def _compute_distance(self, v1: np.ndarray, v2: np.ndarray) -> float:
+        if self.metric == 'cosine':
+            # Cosine distance = 1 - cosine_similarity
+            sim = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-8)
+            return 1.0 - sim
+        else:
+            return np.linalg.norm(v1 - v2)
+        
     def _key_for(self, v: np.ndarray, li: int) -> int:
 
         ID_v = self._compute_ID(v, li)
@@ -108,7 +133,8 @@ class LSH:
         multi_probe: bool = True,
         probe_range: int = 2
     ) -> List[Tuple[int, float]]:
-
+        if self.metric == 'cosine':
+            query = self._normalize(query)
         candidates = []
         examined = 0
         
@@ -122,8 +148,17 @@ class LSH:
             g_q = ID_q % self.tableSize
             
             # Multi-probe: check main bucket + neighboring buckets
-            if multi_probe:
+            if multi_probe and self.metric == 'l2':
                 probe_deltas = range(-probe_range, probe_range + 1)
+            elif multi_probe and self.metric == 'cosine':
+                # For SimHash, probe nearby Hamming distances
+                probe_deltas = []
+                for h in range(1, probe_range + 1):
+                    for positions in combinations(range(self.k), h):
+                        delta = 0
+                        for pos in positions:
+                            delta |= (1 << pos)
+                        probe_deltas.append(delta)
             else:
                 probe_deltas = [0]
             
@@ -160,7 +195,7 @@ class LSH:
         # Compute actual distances
         distances = []
         for idx in candidates:
-            dist = np.linalg.norm(query - self.embeddings[idx])
+            dist = self._compute_distance(query, self.embeddings[idx])
             distances.append((idx, dist))
         
         # Sort by distance and return top N

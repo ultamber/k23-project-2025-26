@@ -187,5 +187,5 @@ void LSH::search(const vector<VectorData> &queries, ofstream &out) {
         calculatePerQueryMetrics(queries[qi].id, qi, tApprox, distApprox, rlist, out);
     }
 
-    printSummary(qCount, out);
+    // printSummary(qCount, out);
 };
