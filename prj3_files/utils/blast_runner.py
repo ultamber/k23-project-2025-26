@@ -21,11 +21,14 @@ class BLASTRunner:
         self.blastp_path = blastp_path
         self.evalue_threshold = evalue_threshold
         
-        self.db_path = None
-        self.temp_dir = None
+        self.db_path = None  # Path to BLAST database (set by build_database)
+        self.temp_dir = None  # Temporary directory for database files
     
     def build_database(self, fasta_file: str, output_db: Optional[str] = None):
-
+        """
+        Build BLAST protein database from FASTA file.
+        Creates a BLAST-formatted database that can be used for subsequent searches.
+        """
         if output_db is None:
             # Use temp directory with proper cleanup
             self.temp_dir = tempfile.mkdtemp(prefix='blast_db_')
@@ -70,7 +73,10 @@ class BLASTRunner:
         num_threads: int = 8,
         max_target_seqs: int = 100
     ) -> Dict[str, List[Tuple[str, float, float]]]:
-
+        """
+        Run BLAST search against the database.
+        Performs protein-protein BLAST search and returns top-N hits per query.s
+        """
         if self.db_path is None:
             if self.db_fasta is None:
                 raise RuntimeError("No database specified")
@@ -92,7 +98,7 @@ class BLASTRunner:
             '-db', self.db_path,
             '-query', query_fasta,
             '-out', output_file,
-            '-outfmt', '6 qseqid sseqid pident length evalue bitscore',
+            '-outfmt', '6 qseqid sseqid pident length evalue bitscore',  # Tabular format with key fields
             '-evalue', str(self.evalue_threshold),
             '-num_threads', str(num_threads),
             '-max_target_seqs', str(max_target_seqs)
@@ -135,7 +141,14 @@ class BLASTRunner:
         output_file: str,
         N: int
         ) -> Dict[str, List[Tuple[str, float, float, float]]]:
+        """
+        Parse BLAST tabular output file.
 
+        Reads BLAST format 6 output and extracts top-N hits per query,
+        sorted by bitscore in descending order.
+        Returns:
+            Dictionary mapping query IDs to lists of (subject_id, bitscore, evalue, pident) tuples
+        """
         results = {}
         
         with open(output_file, 'r') as f:
@@ -150,15 +163,16 @@ class BLASTRunner:
                 
                 query_id = parts[0]
                 subject_id = parts[1]
-                pident = float(parts[2])
-                length = int(parts[3])
-                evalue = float(parts[4])
-                bitscore = float(parts[5])
+                pident = float(parts[2])  # Percent identity
+                length = int(parts[3])    # Alignment length
+                evalue = float(parts[4])  # E-value
+                bitscore = float(parts[5])  # Bit score
                 
-                # Skip self-hits
+                # Skip self-hits (query matching itself)
                 if query_id == subject_id:
                     continue
                 
+                # Skip hits above E-value threshold
                 if evalue > self.evalue_threshold:
                     continue
                 
@@ -167,6 +181,7 @@ class BLASTRunner:
                 
                 results[query_id].append((subject_id, bitscore, evalue, pident))
         
+        # Sort by bitscore (descending) and keep top-N
         for query_id in results:
             results[query_id].sort(key=lambda x: x[1], reverse=True)
             results[query_id] = results[query_id][:N]
@@ -180,7 +195,9 @@ class BLASTRunner:
         results: Dict[str, List[Tuple[str, float, float]]],
         id_to_index: Optional[Dict[str, int]] = None
     ) -> Dict[str, List[int]]:
-
+        """
+        Convert BLAST results from ID-based to index-based format.
+        """
         if id_to_index is None:
             # Assume IDs are already indices
             return {
@@ -200,7 +217,9 @@ class BLASTRunner:
         return id_lists
     
     def save_results(self, results: Dict, output_file: str):
-
+        """
+        Save BLAST results to a pickle file.
+        """
         output_path = Path(output_file)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
@@ -211,7 +230,9 @@ class BLASTRunner:
     
     @staticmethod
     def load_results(input_file: str) -> Dict:
-
+        """
+        Load BLAST results from a pickle file.
+        """
         with open(input_file, 'rb') as f:
             results = pickle.load(f)
         
@@ -220,7 +241,7 @@ class BLASTRunner:
     
     def cleanup(self):
         if self.db_path:
-            # Remove database files
+            # Remove database files (all BLAST database extensions)
             for ext in ['.phr', '.pin', '.psq', '.pdb', '.pot', '.ptf', '.pto']:
                 db_file = Path(f"{self.db_path}{ext}")
                 db_file.unlink(missing_ok=True)
@@ -234,6 +255,7 @@ class BLASTRunner:
 
 
 if __name__ == '__main__':
+    # Command-line interface for running BLAST searches and saving results
     import argparse
     
     parser = argparse.ArgumentParser(
