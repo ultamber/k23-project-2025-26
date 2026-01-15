@@ -461,7 +461,7 @@ if __name__ == '__main__':
     
     print(f"Results saved to: {output_path}")
     
-    print(f"\n{'='*70}")
+    
     print("SUMMARY")
     print(f"{'='*70}")
     print(f"Queries processed: {len(results)}")
@@ -497,6 +497,6 @@ if __name__ == '__main__':
     # Cleanup
     blast.cleanup()
     
-    print(f"\n{'='*70}")
+    
     print("BLAST SEARCH COMPLETED")
-    print(f"{'='*70}\n")
+    

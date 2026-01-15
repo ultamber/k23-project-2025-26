@@ -62,9 +62,10 @@ class UniProtClient:
         
         if not annotation:
             return go_terms
-        
+        refs = annotation.get('dbReferences') or annotation.get('uniProtKBCrossReferences') or []
+
         # UniProt JSON format: dbReferences with type="GO"
-        for ref in annotation.get('dbReferences', []):
+        for ref in refs:
             if ref.get('type') == 'GO':
                 go_id = ref.get('id', '')
                 
@@ -185,7 +186,8 @@ class UniProtClient:
             'ec_numbers': self.extract_ec_numbers(annotation),
             'pfam_domains': self.extract_pfam_domains(annotation)
         }
-    
+
+
     def compare_annotations(self, id1: str, id2: str) -> Dict:
         summary1 = self.get_protein_summary(id1)
         summary2 = self.get_protein_summary(id2)
@@ -233,6 +235,54 @@ class UniProtClient:
             'has_common_function': pfam_similarity > 0.3 or go_similarity > 0.3 or ec_match
         }
 
+def _extract_uniprot_acc(pid: str) -> str:
+    token = pid.split()[0]
+    if "|" in token:
+        parts = token.split("|")
+        if len(parts) >= 3:
+            return parts[1]
+    return token
+
+def _format_go_terms(go_terms, max_terms: int = 3) -> str:
+    if not go_terms:
+        return "GO: N/A"
+    # Prioritize Function, then Process, then Component
+    order = {"F": 0, "P": 1, "C": 2, "Unknown": 3}
+    go_terms = sorted(go_terms, key=lambda x: order.get(x[1], 9))
+    short = []
+    for go_id, aspect, term in go_terms[:max_terms]:
+        prefix = aspect if aspect in ("F", "P", "C") else "?"
+        short.append(f"{prefix}:{term}")
+    return "GO: " + "; ".join(short)
+
+def get_uniprot_summary_cached(
+    acc: str,
+    uniprot_client,  # type: UniProtClient
+    cache: Dict[str, Dict],
+    state: Dict[str, float],
+    delay: float = 0.2,
+) -> Optional[Dict]:
+    """
+    state should contain: {"last_call": 0.0}
+    """
+    if not uniprot_client or not acc:
+        return None
+
+    if acc in cache:
+        return cache[acc]
+
+    # rate limit
+    last_call = state.get("last_call", 0.0)
+    if delay and delay > 0:
+        now = time.time()
+        sleep_for = (last_call + delay) - now
+        if sleep_for > 0:
+            time.sleep(sleep_for)
+        state["last_call"] = time.time()
+
+    summary = uniprot_client.get_protein_summary(acc)
+    cache[acc] = summary
+    return summary
 
 def batch_fetch_annotations(
     protein_ids: List[str],

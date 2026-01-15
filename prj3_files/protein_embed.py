@@ -36,10 +36,10 @@ class ESM2Embedder:
             print("Please install: pip install fair-esm")
             sys.exit(1)
         
-        # Μέγιστο μήκος ακολουθίας: 1024 tokens.
+        # Maximum sequence length: 1024 tokens.
         # 1024 total tokens − 2 special tokens (CLS, EOS) = 1022 residues.
-        # Απαραίτητο λόγω της τετραγωνικής πολυπλοκότητας μνήμης του Attention(O(L2)).
-        self.model.eval()
+        # Necessary due to the quadratic memory complexity of Attention(O(L^2)).
+        self.model.eval()  # Set model to evaluation mode (no gradients)
         self.max_length = 1022
 
     # Βήμα 1: Tokenization and Truncation
@@ -47,7 +47,7 @@ class ESM2Embedder:
     def truncate_sequence(self, sequence: str) -> str:
         if len(sequence) > self.max_length:
             print(f"Warning: Truncating sequence of length {len(sequence)} to {self.max_length}")
-            return sequence[:self.max_length]
+            return sequence[:self.max_length]  # Truncate to max length
         return sequence
     
     # Βήμα 2: Batching 
@@ -70,7 +70,7 @@ class ESM2Embedder:
                 desc="Generating embeddings", 
                 total=num_batches,
                 unit="batch"
-            )
+            )  # Wrap iterator with progress bar
         # Process in batches
         for i in iterator:
             batch = sequences[i:i + batch_size]
@@ -83,31 +83,31 @@ class ESM2Embedder:
                 truncated_seq = self.truncate_sequence(sequence)
                 batch_data.append((protein_id, truncated_seq))
                 batch_ids.append(protein_id)
-                batch_lengths.append(len(truncated_seq))
+                batch_lengths.append(len(truncated_seq))  # Store length for pooling
             
             labels, strs, tokens = self.batch_converter(batch_data)
             tokens = tokens.to(self.device)
 
             # Βήμα 3:Inference
-            with torch.no_grad():
-                results = self.model(tokens, repr_layers=[self.num_layers])
+            with torch.no_grad():  # Disable gradient computation for inference
+                results = self.model(tokens, repr_layers=[self.num_layers])  # Run model to get representations
             
             # Βήμα 4: Mean pooling over token embeddings (excluding padding and special tokens)
-            token_embeddings = results["representations"][self.num_layers]
+            token_embeddings = results["representations"][self.num_layers]  # Get embeddings from last layer
         
             batch_embeddings = []
             for seq_idx, seq_len in enumerate(batch_lengths):
-                seq_tokens = token_embeddings[seq_idx, 1:seq_len+1, :]
-                seq_embedding = seq_tokens.mean(dim=0)
+                seq_tokens = token_embeddings[seq_idx, 1:seq_len+1, :]  # Exclude CLS token and padding
+                seq_embedding = seq_tokens.mean(dim=0)  # Average over sequence length
                 batch_embeddings.append(seq_embedding)
             
-            batch_embeddings = torch.stack(batch_embeddings)
-            batch_embeddings = torch.nn.functional.normalize(batch_embeddings, p=2, dim=1)
-            embeddings_np = batch_embeddings.cpu().numpy().astype(np.float32)
+            batch_embeddings = torch.stack(batch_embeddings)  # Stack into tensor
+            batch_embeddings = torch.nn.functional.normalize(batch_embeddings, p=2, dim=1)  # L2 normalize
+            embeddings_np = batch_embeddings.cpu().numpy().astype(np.float32)  # Convert to numpy
             all_embeddings.append(embeddings_np)
             all_ids.extend(batch_ids)
         
-        final_embeddings = np.vstack(all_embeddings)
+        final_embeddings = np.vstack(all_embeddings)  # Concatenate all batch embeddings
         
         print(f"\nGenerated embeddings for {len(all_ids)} proteins")
         print(f"Shape: {final_embeddings.shape}")
@@ -226,16 +226,16 @@ def main():
         print(f" Error: Input file not found: {args.input}")
         sys.exit(1)
     
-    print("=" * 70)
+
     print("Protein Embedding Generation using ESM-2")
-    print("=" * 70)
+
     print(f"Input:  {args.input}")
     print(f"Output: {args.output}")
     print(f"Model:  {args.model}")
     print(f"Device: {args.device}")
     print(f"Batch:  {args.batch_size}")
     print(f"C++ fvecs output: {not args.no_fvecs}")
-    print("=" * 70)
+
     print()
     
     print("Loading FASTA sequences...")
@@ -247,7 +247,7 @@ def main():
     
     print(f"Loaded {len(sequences)} sequences")
     
-    lengths = [len(seq) for _, seq in sequences]
+    lengths = [len(seq) for _, seq in sequences]  # Calculate sequence lengths for stats
     print(f"Length stats: min={min(lengths)}, max={max(lengths)}, mean={np.mean(lengths):.1f}")
     
     print("\n Generating embeddings...")
@@ -266,9 +266,9 @@ def main():
         save_fvecs_format=not args.no_fvecs
     )
     
-    print("\n" + "=" * 70)
+
     print(" Embedding generation complete")
-    print("=" * 70)
+
     print(f"Generated {len(ids)} embeddings of dimension {embeddings.shape[1]}")
     print(f"\nFiles created:")
     print(f"  - {args.output}.npy   (embeddings - Python)")

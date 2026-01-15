@@ -4,8 +4,9 @@ from datetime import datetime
 import numpy as np
 import json
 import pickle
+import time
 
-from utils.uniprot_client import UniProtClient
+from utils.uniprot_client import UniProtClient, _extract_uniprot_acc, _format_go_terms, get_uniprot_summary_cached
 from utils.pfam_loader import _get_pfams_for_id
 
 def write_method_results(
@@ -25,7 +26,8 @@ def write_method_results(
     display_n: int = 10,
     save_raw_data: bool = True,
     output_file: Optional[str] = None,
-    uniprot_client: Optional[UniProtClient] = None
+    uniprot_client: Optional[UniProtClient] = None,
+    uniprot_delay: float = 0.0
 ):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -60,10 +62,10 @@ def write_method_results(
         
         # Per-query recall
         if blast_indices and q_idx in blast_indices:
-            blast_top_n = set([hit[0] for hit in blast_indices[q_idx][:N]])
-            ann_top_n = set([idx for idx, _ in query_results[:N]])
+            blast_top_n = set([hit[0] for hit in blast_indices[q_idx][:N]])  # Get top N BLAST hits
+            ann_top_n = set([idx for idx, _ in query_results[:N]])  # Get top N ANN hits
             if blast_top_n:
-                query_recall = len(blast_top_n & ann_top_n) / len(blast_top_n)
+                query_recall = len(blast_top_n & ann_top_n) / len(blast_top_n)  # Intersection over BLAST set
                 per_query_recalls.append(query_recall)
             else:
                 per_query_recalls.append(None)
@@ -73,7 +75,7 @@ def write_method_results(
     # Calculate per-query QPS if times available
     per_query_qps = []
     if per_query_times:
-        per_query_qps = [1.0 / t if t > 0 else 0.0 for t in per_query_times]
+        per_query_qps = [1.0 / t if t > 0 else 0.0 for t in per_query_times]  # QPS = 1 / time
 
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write("=" * 90 + "\n")
@@ -227,7 +229,7 @@ def write_method_results(
             for i in range(len(bins) - 1):
                 count = sum(1 for r in valid_recalls if bins[i] <= r < bins[i+1])
                 if i == len(bins) - 2:
-                    count = sum(1 for r in valid_recalls if bins[i] <= r <= bins[i+1])
+                    count = sum(1 for r in valid_recalls if bins[i] <= r <= bins[i+1])  # Include upper bound for last bin
                 pct = 100 * count / len(valid_recalls) if valid_recalls else 0
                 bar = "█" * int(pct / 5)
                 f.write(f"  [{bins[i]:.1f} - {bins[i+1]:.1f}]: {count:4d} ({pct:5.1f}%) {bar}\n")
@@ -270,7 +272,10 @@ def write_method_results(
             # Get BLAST Top-N for this query
             blast_top_n_set = set()
             if blast_indices and q_idx in blast_indices:
-                blast_top_n_set = set([hit[0] for hit in blast_indices[q_idx][:N]])
+                blast_top_n_set = set([hit[0] for hit in blast_indices[q_idx][:N]])  # Set of top N BLAST neighbor indices
+            
+            uniprot_cache_summary: Dict[str, Dict] = {}
+            uniprot_state = {"last_call": 0.0}
 
             for rank, (neighbor_idx, distance) in enumerate(query_results[:display_n], 1):
                 neighbor_id = database_ids[neighbor_idx] if database_ids and neighbor_idx < len(database_ids) else f"Protein_{neighbor_idx}"
@@ -283,7 +288,7 @@ def write_method_results(
                 if blast_indices and q_idx in blast_indices:
                     in_blast = "Yes" if neighbor_idx in blast_top_n_set else "No"
                 
-                # BLAST Identity % - NEW
+                # BLAST Identity %
                 blast_id_str = "N/A"
                 identity = _get_blast_identity(q_idx, neighbor_idx, blast_results, blast_identity)
 
@@ -294,14 +299,21 @@ def write_method_results(
                 neighbor_pfams = _get_pfams_for_id(neighbor_id, pfam_mapping) if pfam_mapping else []
                 neighbor_pfam_display = neighbor_pfams[0] if neighbor_pfams else "N/A"
                 
-                comment = _generate_comment_with_identity(
+                comment_core = _generate_comment_with_identity(
                     query_pfams=query_pfams,
                     neighbor_pfams=neighbor_pfams,
                     distance=distance,
                     in_blast_top_n=(in_blast == "Yes") if in_blast != "?" else None,
                     blast_identity=identity
                 )
-                
+                go_suffix = "GO: N/A"
+                if uniprot_client:
+                    acc = _extract_uniprot_acc(neighbor_id)
+                    s = get_uniprot_summary_cached(acc, uniprot_client, uniprot_cache_summary, uniprot_state, delay=0.2)
+                    if s and s.get("found"):
+                        go_suffix = _format_go_terms(s.get("go_terms", []), max_terms=3)
+
+                comment = f"{comment_core} | {go_suffix}" if comment_core != "--" else go_suffix
                 # Write row
                 f.write(f"{rank:<6} | {display_neighbor_id:<25} | {distance:<10.4f} | {blast_id_str:<12} | {in_blast:<12} |")
                 if pfam_mapping:
@@ -364,11 +376,11 @@ def write_method_results(
         
         # Save distances as numpy array
         distances_file = raw_data_dir / f"{method_slug}_distances.npy"
-        max_neighbors = max(len(r) for r in results) if results else 0
-        distances_array = np.full((len(results), max_neighbors), np.nan)
+        max_neighbors = max(len(r) for r in results) if results else 0  # Find max number of neighbors
+        distances_array = np.full((len(results), max_neighbors), np.nan)  # Initialize with NaN
         for q_idx, query_results in enumerate(results):
             for n_idx, (_, dist) in enumerate(query_results):
-                distances_array[q_idx, n_idx] = dist
+                distances_array[q_idx, n_idx] = dist  # Fill with actual distances
         np.save(distances_file, distances_array)
         print(f"Saved distances array to: {distances_file}")
         
@@ -424,7 +436,7 @@ def _get_pfam_for_id(protein_id: str, pfam_mapping: Dict) -> Optional[str]:
     if '|' in protein_id:
         parts = protein_id.split('|')
         if len(parts) >= 2:
-            accession = parts[1]
+            accession = parts[1]  # Extract accession from UniProt format
             if accession in pfam_mapping:
                 return pfam_mapping[accession].get('pfam')
     
@@ -481,7 +493,7 @@ def write_comparison_summary(
         sorted_methods = sorted(
             all_metrics.items(),
             key=lambda x: x[1].get('recall_at_n', 0) or 0,
-            reverse=True
+            reverse=True  # Sort by recall descending
         )
         
         for method_name, metrics in sorted_methods:
@@ -529,10 +541,10 @@ def _generate_comment_with_identity(
 
     qset = set(query_pfams)
     nset = set(neighbor_pfams)
-    shared = sorted(qset & nset)
+    shared = sorted(qset & nset)  # Find shared Pfam domains
     same_family = len(shared) > 0
 
-    rep = shared[0] if shared else neighbor_pfams[0]
+    rep = shared[0] if shared else neighbor_pfams[0]  # Representative domain
 
     low_identity = blast_identity is not None and blast_identity < 30
     very_low_identity = blast_identity is not None and blast_identity < 20

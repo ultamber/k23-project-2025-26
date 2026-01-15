@@ -628,7 +628,7 @@ if __name__ == '__main__':
     
     print(f"Results saved to {output_path}")
     
-    print(f"\n{'='*70}")
+    
     print("Summary:")
     print(f"{'='*70}")
     print(f"Database: {nlsh.n} proteins")
@@ -643,6 +643,6 @@ if __name__ == '__main__':
     for i, (idx, dist) in enumerate(results[0][:5], 1):
         print(f"{i}. Index {idx}: distance = {dist:.4f}")
     
-    print(f"\n{'='*70}")
+    
     print("Neural LSH Search Completed")
-    print(f"{'='*70}\n")
+    

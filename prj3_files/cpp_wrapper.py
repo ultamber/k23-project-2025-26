@@ -18,7 +18,7 @@ def parse_cpp_output(output_file: str) -> Dict:
     }
     
     current_query = None
-    in_r_neighbors = False
+    in_r_neighbors = False  # Flag for R-near neighbors section
     
     with open(output_file, 'r') as f:
         for line in f:
@@ -27,13 +27,15 @@ def parse_cpp_output(output_file: str) -> Dict:
                 in_r_neighbors = False
                 continue
             
+            # First non-empty line that's not a query is the method name
             if results['method'] is None and not line.startswith('Query'):
                 results['method'] = line
                 continue
             
+            # Start of new query section
             if line.startswith('Query:'):
                 if current_query is not None:
-                    results['queries'].append(current_query)
+                    results['queries'].append(current_query)  # Save previous query
                 current_query = {
                     'query_idx': int(line.split(':')[1].strip()),
                     'neighbors': [],
@@ -44,22 +46,23 @@ def parse_cpp_output(output_file: str) -> Dict:
                 in_r_neighbors = False
                 continue
             
-            # Nearest neighbor
+            # Parse neighbor indices
             if line.startswith('Nearest neighbor-'):
                 idx = int(line.split(':')[1].strip())
                 current_query['neighbors'].append(idx)
                 continue
             
-            # Distances
+            # Parse approximate distances
             if line.startswith('distanceApproximate:'):
                 current_query['distances_approx'].append(float(line.split(':')[1].strip()))
                 continue
             
+            # Parse true distances
             if line.startswith('distanceTrue:'):
                 current_query['distances_true'].append(float(line.split(':')[1].strip()))
                 continue
             
-            # R-near neighbors section
+            # R-near neighbors section (for range search)
             if line.startswith('R-near neighbors:'):
                 in_r_neighbors = True
                 continue
@@ -68,7 +71,7 @@ def parse_cpp_output(output_file: str) -> Dict:
                 current_query['r_neighbors'].append(int(line))
                 continue
             
-            # Summary section
+            # Summary statistics section
             if line.startswith('Average AF:'):
                 results['summary']['avg_af'] = float(line.split(':')[1].strip())
             elif line.startswith('Recall@N:'):
@@ -89,10 +92,17 @@ def parse_cpp_output(output_file: str) -> Dict:
 
 
 def convert_to_ann_results(parsed: Dict) -> List[List[Tuple[int, float]]]:
+    """
+    Convert parsed C++ output to standard ANN results format.
+    
+    Standard format: List[List[Tuple[int, float]]] where each inner list
+    contains (neighbor_index, distance) tuples for one query.
+    """
     results = []
     for query in parsed['queries']:
         query_results = []
         for i, idx in enumerate(query['neighbors']):
+            # Use approximate distance if available, otherwise 0.0
             dist = query['distances_approx'][i] if i < len(query['distances_approx']) else 0.0
             query_results.append((idx, dist))
         results.append(query_results)
@@ -113,7 +123,7 @@ class CppSearchWrapper:
         self.dataset_type = dataset_type
         self.temp_dir = temp_dir or tempfile.mkdtemp(prefix='cpp_search_')
         
-        # Ensure temp dir exists
+        # Ensure temp directory exists
         Path(self.temp_dir).mkdir(parents=True, exist_ok=True)
     
     def _prepare_data(
@@ -174,7 +184,7 @@ class CppSearchWrapper:
         db_path, q_path = self._prepare_data(database, queries)
         output_file = output_file or os.path.join(self.temp_dir, 'lsh_results.txt')
         
-        # Build command
+        # Build command line arguments for C++ binary
         cmd = [
             self.binary_path,
             '-d', db_path,
@@ -188,16 +198,16 @@ class CppSearchWrapper:
             '-N', str(N)
         ]
         
+        # Optional range search parameters
         if range_search and R is not None:
             cmd.extend(['-R', str(R), '-range', 'true'])
         
+        # Optional ground truth for evaluation
         if ground_truth_file:
             cmd.extend(['-gt', ground_truth_file])
         
-        # Run
+        # Execute command and parse results
         stdout, stderr, elapsed = self._run_command(cmd, verbose)
-        
-        # Parse results
         parsed = parse_cpp_output(output_file)
         results = convert_to_ann_results(parsed)
         
@@ -426,7 +436,7 @@ class CppSearchWrapper:
     def cleanup(self):
         import shutil
         if self.temp_dir and os.path.exists(self.temp_dir):
-            shutil.rmtree(self.temp_dir)
+            shutil.rmtree(self.temp_dir)  # Remove temp directory
 
 
 def run_cpp_method(
@@ -485,12 +495,12 @@ def run_cpp_method(
         else:
             raise ValueError(f"Unknown method: {method}")
         
-        # Convert to metrics format expected by protein_search.py
+        # Convert C++ results to the metrics format expected by protein_search.py
         metrics = {
-            'build_time': 0,  # Included in search time for C++
+            'build_time': 0,  # C++ build time included in search time
             'search_time': result['elapsed'],
             'qps': len(query_embeddings) / result['elapsed'] if result['elapsed'] > 0 else 0,
-            **result['summary']
+            **result['summary']  # Include parsed summary statistics
         }
         
         return result['results'], metrics
@@ -511,7 +521,7 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    # Load data
+    # Load data from fvecs files
     print(f"Loading database from {args.database}")
     database = load_fvecs(args.database)
     print(f"Database shape: {database.shape}")
@@ -520,7 +530,7 @@ if __name__ == "__main__":
     queries = load_fvecs(args.queries)
     print(f"Queries shape: {queries.shape}")
     
-    # Run search
+    # Run search using the wrapper
     wrapper = CppSearchWrapper(binary_path=args.binary)
     
     result = wrapper.search(

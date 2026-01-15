@@ -4,6 +4,19 @@ from Bio import Align
 from utils.pfam_loader import load_pfam_mapping, get_pfam_for_id, get_pfams_for_id, PFAM_DESCRIPTIONS
 
 def compute_sequence_identity(seq1: str, seq2: str) -> float:
+    """
+    Compute sequence identity percentage between two protein sequences using global alignment.
+
+    Uses BioPython's PairwiseAligner with global alignment mode to find the best alignment,
+    then calculates identity as the percentage of matching residues in the shorter sequence.
+    Note: pairwise2.align.globalxx showed that it was deprecated in favor of Align.PairwiseAligner.
+    Args:
+        seq1: First protein sequence as string
+        seq2: Second protein sequence as string
+
+    Returns:
+        Identity percentage (0-100), or 0.0 if sequences are empty or no alignment found
+    """
     if not seq1 or not seq2:
         return 0.0
     
@@ -28,6 +41,18 @@ def compute_sequence_identity(seq1: str, seq2: str) -> float:
 
 
 def get_sequence_from_list(seq_list, idx):
+    """
+    Extract sequence string from a sequence list that may have different formats.
+
+    Handles various sequence storage formats: tuples (id, seq), plain strings, etc.
+
+    Args:
+        seq_list: List of sequences in various formats
+        idx: Index of the sequence to extract
+
+    Returns:
+        Sequence string, or None if not found or invalid format
+    """
     if not seq_list or idx >= len(seq_list):
         return None
     
@@ -45,6 +70,20 @@ def get_sequence_from_list(seq_list, idx):
 
 def is_in_blast_top_n(query_idx: int, neighbor_idx: int, 
     blast_results: Optional[Dict], N: int) -> Optional[bool]:
+    """
+    Check if a neighbor is in the top-N BLAST results for a given query.
+
+    Used to mark which ANN results are also found by BLAST ground truth.
+
+    Args:
+        query_idx: Index of the query sequence
+        neighbor_idx: Index of the neighbor sequence to check
+        blast_results: Dictionary containing BLAST results with 'blast_results_indices' key
+        N: Number of top results to consider
+
+    Returns:
+        True if neighbor is in top-N BLAST results, False if not, None if no BLAST data
+    """
     if not blast_results or 'blast_results_indices' not in blast_results:
         return None
     
@@ -52,7 +91,7 @@ def is_in_blast_top_n(query_idx: int, neighbor_idx: int,
     if query_idx not in blast_indices:
         return None
     
-    blast_top_n = [hit[0] for hit in blast_indices[query_idx][:N]]
+    blast_top_n = [hit[0] for hit in blast_indices[query_idx][:N]]  # Extract indices from top-N hits
     return neighbor_idx in blast_top_n
 
 
@@ -68,6 +107,13 @@ def format_output_txt(
     N: int = 50,
     display_n: int = 10
 ):
+    """
+    Format protein search results into a comprehensive text report.
+
+    Creates a detailed report showing method comparison, top-N neighbors for each method,
+    sequence identities, Pfam domain information, and biological interpretation comments.
+
+    """
     output_path = Path(output_file)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
@@ -242,6 +288,12 @@ def generate_pfam_bio_comment(
     distance: float,
     in_blast_top_n: Optional[bool],
 ) -> str:
+    """
+    Generate biological interpretation comment based on Pfam domains and sequence identity.
+
+    Provides comments about the relationship between query and neighbor proteins
+    based on shared domains, sequence identity levels, and embedding distance.
+    """
     if not query_pfams or not neighbor_pfams:
         return "--"
 

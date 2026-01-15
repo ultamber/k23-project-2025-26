@@ -270,11 +270,11 @@ def run_blast_search(
                 parts = pid.split('|')
                 if len(parts) >= 3:
                     entry_name = parts[2].split()[0]
-                    db_id_to_index[entry_name] = i
+                    db_id_to_index[entry_name] = i  # Map UniProt entry name to index
         query_id_to_index = {}
         for i, pid in enumerate(query_ids):
             query_id_to_index[pid] = i
-            query_id_to_index[get_accession(pid)] = i
+            query_id_to_index[get_accession(pid)] = i  # Map query accession to index
         
         blast_results_indices = {}
         for query_id, hits in results.items():
@@ -303,7 +303,7 @@ def run_blast_search(
     blast.cleanup()
     
     print(f"BLAST search completed")
-    print(f"{'='*70}\n")
+    
     
     return {
         'blast_results_ids': results,
@@ -337,7 +337,7 @@ def main():
             print(f"Will generate embeddings...")
             
             # Generate embeddings
-            temp_prefix = tempfile.mkdtemp(prefix='db_vectors_')
+            temp_prefix = tempfile.mkdtemp(prefix='db_vectors_')  # Create temp directory for embeddings
             database_embeddings, database_ids = embed_fasta(
                 args.database,
                 output_prefix=temp_prefix,
@@ -390,7 +390,7 @@ def main():
             print(f"Will generate embeddings...")
             
             # Generate embeddings
-            temp_prefix = tempfile.mkdtemp(prefix='query_vectors_')
+            temp_prefix = tempfile.mkdtemp(prefix='query_vectors_')  # Create temp directory for query embeddings
             query_embeddings, query_ids = embed_fasta(
                 args.queries,
                 output_prefix=temp_prefix,
@@ -445,8 +445,8 @@ def main():
             print("Use --method to also run Python search, or use C++ binary")
             return
     # Normalize embeddings - does nothing if already normalized (from embedder) - for safety 
-    database_embeddings = database_embeddings / (np.linalg.norm(database_embeddings, axis=1, keepdims=True) + 1e-8)
-    query_embeddings = query_embeddings / (np.linalg.norm(query_embeddings, axis=1, keepdims=True) + 1e-8)
+    database_embeddings = database_embeddings / (np.linalg.norm(database_embeddings, axis=1, keepdims=True) + 1e-8)  # L2 normalize database vectors
+    query_embeddings = query_embeddings / (np.linalg.norm(query_embeddings, axis=1, keepdims=True) + 1e-8)  # L2 normalize query vectors
 
     # Database ID mappings
     db_id_to_index = {}
@@ -461,7 +461,7 @@ def main():
                 parts = pid.split('|')
                 if len(parts) >= 3:
                     entry_name = parts[2].split()[0]
-                    db_id_to_index[entry_name] = i
+                    db_id_to_index[entry_name] = i  # Map UniProt entry name
         print(f"Created database ID mappings: {len(database_ids)} proteins")
     # Query ID mappings
     query_id_to_index = {}
@@ -470,7 +470,7 @@ def main():
         for i, pid in enumerate(query_ids):
             query_id_to_index[pid] = i
             acc = get_accession(pid)
-            query_acc_to_index[acc] = i
+            query_acc_to_index[acc] = i  # Map query accession
         print(f"Created query ID mappings: {len(query_ids)} proteins")
 
     print(f"\nLoading BLAST ground truth...")
@@ -695,15 +695,7 @@ def main():
             print(f"  {method}: Recall@{args.N} = {recall:.4f}")
     else:
         print("WARNING: Skipping BLAST evaluation - no blast_results_indices!")
-    print(f"\nSaving results...")
-    if blast_results and 'blast_results_ids' in blast_results:
-        sample_query = list(blast_results['blast_results_ids'].keys())[0]
-        sample_hits = blast_results['blast_results_ids'][sample_query][:3]
-        print(f"DEBUG: Sample BLAST query ID: {sample_query}")
-        print(f"DEBUG: Sample BLAST hit IDs: {[h[0] for h in sample_hits]}")
-        for hit in sample_hits:
-            hit_acc = get_accession(hit[0])
-            print(f"DEBUG: Hit accession '{hit_acc}' in db_id_to_index? {hit_acc in db_id_to_index}")
+    print(f"\nSaving results")
     output_path = Path(args.output)
     
     # Prepare results dict
@@ -751,7 +743,7 @@ def main():
     # Prepare individual method result files
     output_dir.mkdir(parents=True, exist_ok=True)
         
-    # Write individual method results
+    # Write individual method results and format names
     for method_name, method_results in all_results.items():
         method_slug = method_name.lower().replace(' ', '_').replace('-', '_')
         if(method_name == "lsh"):
@@ -787,7 +779,8 @@ def main():
             display_n=10,
             save_raw_data=True,
             output_file=output_file,
-            uniprot_client=uniprot_client
+            uniprot_client=uniprot_client,
+            uniprot_delay=0.2 # rate limit
         )
     
     write_comparison_summary(
@@ -795,9 +788,9 @@ def main():
         all_metrics=tracker.metrics,
         N=args.N
     )
-    print(f"\n{'='*70}")
+    
     print("Protein Search Completed")
-    print(f"{'='*70}\n")
+    
 
 def _extract_blast_identity(
     blast_results: Optional[Dict],
@@ -822,12 +815,12 @@ def _extract_blast_identity(
             
             for hit in hits:
                 if len(hit) >= 4:
-                    hit_id, bitscore, evalue, pident = hit[0], hit[1], hit[2], hit[3]
+                    hit_id, bitscore, evalue, pident = hit[0], hit[1], hit[2], hit[3]  # Unpack hit with identity
                 elif len(hit) >= 3:
-                    hit_id, bitscore, evalue = hit[0], hit[1], hit[2]
+                    hit_id, bitscore, evalue = hit[0], hit[1], hit[2]  # Unpack hit without identity
                     pident = None
                 else:
-                    continue
+                    continue  # Skip malformed hits
                 
                 hit_acc = get_accession(hit_id)
                 
