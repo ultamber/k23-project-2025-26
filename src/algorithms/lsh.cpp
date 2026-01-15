@@ -82,7 +82,11 @@ uint64_t LSH::computeID(const vector<float> &v, int li) const {
         long long hj = (long long)floor((dot + t_[li][j]) / w_);
 
         // Combine using random coefficients: ID = Σ r_ih_i(p) mod M 
-        ID = (ID + (uint64_t)(r_[li][j] * hj)) % MOD_M;
+        // ID = (ID + (uint64_t)(r_[li][j] * hj)) % MOD_M;
+        long long term = r_[li][j] * hj;              // signed
+        long long mod  = term % (long long)MOD_M;    // signed mod
+        if (mod < 0) mod += MOD_M;
+        ID = (ID + (uint64_t)mod) % MOD_M;
     }
 
     return ID;
@@ -179,8 +183,12 @@ void LSH::search(const vector<VectorData> &queries, ofstream &out) {
         // Find top N nearest neighbors 
         int N = min(Args.N, (int)distApprox.size());
         if (N > 0) {
-            nth_element(distApprox.begin(), distApprox.begin() + N, distApprox.end());
-            sort(distApprox.begin(), distApprox.begin() + N);
+            if (N < (int)distApprox.size()) {
+                nth_element(distApprox.begin(), distApprox.begin() + N, distApprox.end());
+                sort(distApprox.begin(), distApprox.begin() + N);
+            } else {
+                sort(distApprox.begin(), distApprox.end());
+            }
         }
 
         double tApprox = duration<double>(high_resolution_clock::now() - t0).count();

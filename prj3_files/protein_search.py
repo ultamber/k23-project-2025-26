@@ -16,8 +16,9 @@ from utils.fasta_loader import get_accession, load_fasta
 from utils.evaluation import PerformanceTracker, compute_recall_at_n
 from utils.output_formatter import format_output_txt
 from utils.results_writer import write_method_results, write_comparison_summary
-from utils.blast_runner import BLASTRunner
+from utils.blast_runner_fixed import BLASTRunner
 from utils.protein_fvecs import export_for_cpp, save_fvecs, load_fvecs
+from utils.uniprot_client import UniProtClient
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -123,7 +124,7 @@ def parse_args():
         help='Export embeddings to .fvecs format at this directory (for C++ use)'
     )
     # LSH
-    parser.add_argument('--lsh-L', type=int, default=8, help='LSH: number of hash tables')
+    parser.add_argument('--lsh-L', type=int, default=50, help='LSH: number of hash tables')
     parser.add_argument('--lsh-k', type=int, default=6, help='LSH: hash functions per table')
     parser.add_argument('--lsh-w', type=float, default=1.0, help='LSH: bucket width')
     # Hypercube
@@ -255,11 +256,21 @@ def run_blast_search(
     
     blast_results_indices = None
     if database_ids and query_ids:
+        overlap = set(map(get_accession, database_ids)) & set(map(get_accession, query_ids))
+        if overlap:
+            print(f"WARNING: {len(overlap)} query accessions also appear in database (possible leakage)")
         db_id_to_index = {}
+        db_acc_to_index = {}
         for i, pid in enumerate(database_ids):
             db_id_to_index[pid] = i
-            db_id_to_index[get_accession(pid)] = i
-        
+            acc = get_accession(pid)
+            db_id_to_index[acc] = i
+            db_acc_to_index[acc] = i
+            if '|' in pid:
+                parts = pid.split('|')
+                if len(parts) >= 3:
+                    entry_name = parts[2].split()[0]
+                    db_id_to_index[entry_name] = i
         query_id_to_index = {}
         for i, pid in enumerate(query_ids):
             query_id_to_index[pid] = i
@@ -356,12 +367,13 @@ def main():
     
     else:
         raise ValueError("Must provide either -d/--database or --embeddings")
+    
     pfam_mapping = None
     if args.pfam_map:
         from utils.pfam_loader import load_pfam_mapping
         pfam_mapping = load_pfam_mapping(args.pfam_map)
     print(f"\nResolving queries...")
-    
+    uniprot_client = UniProtClient(cache_dir="uniprot_cache")
     query_embeddings = None
     query_ids = None
     query_seqs = None
@@ -409,6 +421,7 @@ def main():
     else:
         raise ValueError("Must provide either -q/--queries or --query-embeddings")
     
+    
     # Limit queries if requested
     if args.max_queries:
         query_embeddings = query_embeddings[:args.max_queries]
@@ -431,7 +444,10 @@ def main():
         if not args.method:
             print("Use --method to also run Python search, or use C++ binary")
             return
-        
+    # Normalize embeddings - does nothing if already normalized (from embedder) - for safety 
+    database_embeddings = database_embeddings / (np.linalg.norm(database_embeddings, axis=1, keepdims=True) + 1e-8)
+    query_embeddings = query_embeddings / (np.linalg.norm(query_embeddings, axis=1, keepdims=True) + 1e-8)
+
     # Database ID mappings
     db_id_to_index = {}
     db_acc_to_index = {}
@@ -439,9 +455,14 @@ def main():
         for i, pid in enumerate(database_ids):
             db_id_to_index[pid] = i
             acc = get_accession(pid)
+            db_id_to_index[acc] = i
             db_acc_to_index[acc] = i
+            if '|' in pid:
+                parts = pid.split('|')
+                if len(parts) >= 3:
+                    entry_name = parts[2].split()[0]
+                    db_id_to_index[entry_name] = i
         print(f"Created database ID mappings: {len(database_ids)} proteins")
-    
     # Query ID mappings
     query_id_to_index = {}
     query_acc_to_index = {}
@@ -489,10 +510,12 @@ def main():
         )
     else:
         print(f"No ground truth available (use --run-blast or --ground-truth)")
-
-    print(f"\nRunning ANN methods...")
-    print(f"Method: {args.method}")
-    print(f"N: {args.N}")
+    blast_idx = blast_results.get("blast_results_indices", {})
+    if blast_idx:
+        q0 = 0
+        print(f"\nRunning ANN methods...")
+        print(f"Method: {args.method}")
+        print(f"N: {args.N}")
     
     tracker = PerformanceTracker()
     all_results = {}
@@ -511,7 +534,7 @@ def main():
         wrapper = CppSearchWrapper(
             binary_path=args.cpp_binary,
             nlsh_script=args.cpp_nlsh_script,
-            dataset_type='protein'
+            dataset_type='sift'
         )
         
         for method in methods_to_run:
@@ -581,7 +604,7 @@ def main():
                 continue
         
         wrapper.cleanup()
-    
+        
     else:
         for method in methods_to_run:
             print(f"\n  Running {method.upper()}...")
@@ -663,49 +686,6 @@ def main():
             
             print(f"  Completed in {tracker.metrics[method]['search_time']:.2f}s")
             print(f"  QPS: {tracker.metrics[method]['qps']:.2f}")
-        
-    # blast_identity = None
-    # print(f"\n--- DEBUG ---")
-    # print(f"blast_results is not None: {blast_results is not None}")
-    # if blast_results:
-    #     print(f"Keys in blast_results: {blast_results.keys()}")
-    #     print(f"'blast_results_indices' in blast_results: {'blast_results_indices' in blast_results}")
-    # print(f"--- END DEBUG ---\n")
-    # if blast_results and 'blast_results_indices' in blast_results:
-    #     blast_identity = {}
-    #     blast_indices = blast_results['blast_results_indices']
-        
-    # print(f"  BLAST indices has {len(blast_indices)} queries")
-    # print(f"  ANN results has {len(all_results)} methods")
-    
-    # for method, results in all_results.items():
-    #     print(f"  Evaluating {method}...")
-    #     print(f"Results has {len(results)} queries")
-        
-    #     # Compute recall@N
-    #     recall = compute_recall_at_n(results, blast_indices, args.N)
-    #     tracker.metrics[method]['recall_at_n'] = recall
-        
-    #     print(f"{method}: Recall@{args.N} = {recall:.4f}")
-    #     # If BLAST results include pident (4th element in tuple)
-    #     if 'blast_results_ids' in blast_results:
-    #         for query_id, hits in blast_results['blast_results_ids'].items():
-    #             # Get query index
-    #             if query_ids:
-    #                 query_acc = get_accession(query_id)
-    #                 if query_acc in query_id_to_index:
-    #                     q_idx = query_id_to_index[query_acc]
-    #                     blast_identity[q_idx] = {}
-                        
-    #                     for hit in hits:
-    #                         if len(hit) >= 4:  # (hit_id, bitscore, evalue, pident)
-    #                             hit_id, bitscore, evalue, pident = hit[:4]
-    #                             hit_acc = get_accession(hit_id)
-    #                             if hit_acc in db_id_to_index:
-    #                                 n_idx = db_id_to_index[hit_acc]
-    #                                 blast_identity[q_idx][n_idx] = pident
-    # else:
-    #     print("WARNING: Skipping BLAST evaluation - no blast_results_indices!")
 
     if blast_results and 'blast_results_indices' in blast_results:
         blast_indices = blast_results['blast_results_indices']
@@ -716,7 +696,14 @@ def main():
     else:
         print("WARNING: Skipping BLAST evaluation - no blast_results_indices!")
     print(f"\nSaving results...")
-    
+    if blast_results and 'blast_results_ids' in blast_results:
+        sample_query = list(blast_results['blast_results_ids'].keys())[0]
+        sample_hits = blast_results['blast_results_ids'][sample_query][:3]
+        print(f"DEBUG: Sample BLAST query ID: {sample_query}")
+        print(f"DEBUG: Sample BLAST hit IDs: {[h[0] for h in sample_hits]}")
+        for hit in sample_hits:
+            hit_acc = get_accession(hit[0])
+            print(f"DEBUG: Hit accession '{hit_acc}' in db_id_to_index? {hit_acc in db_id_to_index}")
     output_path = Path(args.output)
     
     # Prepare results dict
@@ -799,7 +786,8 @@ def main():
             N=args.N,
             display_n=10,
             save_raw_data=True,
-            output_file=output_file
+            output_file=output_file,
+            uniprot_client=uniprot_client
         )
     
     write_comparison_summary(
@@ -810,46 +798,6 @@ def main():
     print(f"\n{'='*70}")
     print("Protein Search Completed")
     print(f"{'='*70}\n")
-
-
-# def compute_recall_at_n(
-#     ann_results: List[List[Tuple[int, float]]],
-#     blast_results: Dict[int, List[Tuple]],
-#     N: int
-# ) -> float:
-
-#     total_recall = 0.0
-#     num_queries = 0
-    
-#     for query_idx, ann_neighbors in enumerate(ann_results):
-#         if query_idx not in blast_results:
-#             print(f"WARNING: query_idx {query_idx} not in blast_results")
-#             continue
-        
-#         # Get BLAST top-N indices - handle both 3 and 4 element tuples
-#         blast_hits = blast_results[query_idx][:N]
-#         blast_top_n = set([hit[0] for hit in blast_hits])  # hit[0] is always the index
-        
-#         if not blast_top_n:
-#             print(f"WARNING: No BLAST hits for query {query_idx}")
-#             continue
-        
-#         # Get ANN top-N indices
-#         ann_top_n = set([idx for idx, _ in ann_neighbors[:N]])
-        
-#         # Compute recall
-#         intersection = len(blast_top_n & ann_top_n)
-#         recall = intersection / len(blast_top_n)
-        
-#         total_recall += recall
-#         num_queries += 1
-    
-#     print(f"Computed recall for {num_queries} queries")
-    
-#     if num_queries == 0:
-#         return 0.0
-    
-#     return total_recall / num_queries
 
 def _extract_blast_identity(
     blast_results: Optional[Dict],

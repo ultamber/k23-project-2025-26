@@ -151,7 +151,8 @@ void SearchMethod::calculatePerQueryMetrics(int queryId, int queryIndex, double 
         // Output results
         out << "Query: " << queryIndex << "\n"
             << fixed << setprecision(6);
-        for (int i = 0; i < Args.N; ++i)
+        int Nq = std::min(Args.N, (int)distApproximate.size());
+        for (int i = 0; i < Nq; ++i)
         {
             out << "Nearest neighbor-" << (i + 1) << ": " << distApproximate[i].second << "\n";
             out << "distanceApproximate: " << distApproximate[i].first << "\n";

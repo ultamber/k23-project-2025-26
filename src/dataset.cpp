@@ -61,7 +61,8 @@ void SIFT_Dataset::load(const std::string &path) {
 
     size_t vector_size = 4 + sizeof(float) * dim;
     size_t n = file_size / vector_size;
-
+    if (file_size % vector_size != 0)
+        throw std::runtime_error("Corrupted .fvecs file (size mismatch)");
     dimension = dim;
     count = static_cast<int>(n);
     vectors.resize(count);
@@ -79,8 +80,8 @@ void SIFT_Dataset::load(const std::string &path) {
         f.read((char *)vectors[i].values.data(), dim * sizeof(float));
 
         // Optional: rescale SIFT descriptors to make Euclidean LSH bins meaningful
-        for (auto &x : vectors[i].values)
-            x *= 100.0f; // scale factor; adjust if needed
+        // for (auto &x : vectors[i].values)
+        //     x *= 100.0f; // scale factor; adjust if needed
     }
 }
 

@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 from Bio import Align
-from utils.pfam_loader import load_pfam_mapping, get_pfam_for_id, check_same_family, PFAM_DESCRIPTIONS
+from utils.pfam_loader import load_pfam_mapping, get_pfam_for_id, get_pfams_for_id, PFAM_DESCRIPTIONS
 
 def compute_sequence_identity(seq1: str, seq2: str) -> float:
     if not seq1 or not seq2:
@@ -52,7 +52,7 @@ def is_in_blast_top_n(query_idx: int, neighbor_idx: int,
     if query_idx not in blast_indices:
         return None
     
-    blast_top_n = [hit_idx for hit_idx, _, _ in blast_indices[query_idx][:N]]
+    blast_top_n = [hit[0] for hit in blast_indices[query_idx][:N]]
     return neighbor_idx in blast_top_n
 
 
@@ -155,18 +155,19 @@ def format_output_txt(
             first_query_results = method_results[0] if method_results else []
             
             # Get query Pfam
-            query_pfam = None
+            query_pfams: List[str] = []
             query_pfam_desc = ""
             if pfam_mapping and query_ids:
-                query_pfam = get_pfam_for_id(query_ids[0], pfam_mapping)
-                if query_pfam:
-                    query_pfam_desc = PFAM_DESCRIPTIONS.get(query_pfam, "")
+                query_pfams = get_pfams_for_id(query_ids[0], pfam_mapping)
+                if query_pfams:
+                    # show description of the "primary" Pfam (first)
+                    query_pfam_desc = PFAM_DESCRIPTIONS.get(query_pfams[0], "")
             
             # Method header with Pfam info
             display_name = method_name.upper().replace('-', ' ')
             f.write(f"Method: {display_name}\n")
-            if query_pfam:
-                f.write(f"Query Pfam: {query_pfam} ({query_pfam_desc})\n")
+            if query_pfams:
+                f.write(f"Query Pfam: {';'.join(query_pfams)} ({query_pfam_desc})\n")
             f.write("-"*110 + "\n")
             
             # Column headers - add Pfam column
@@ -189,18 +190,19 @@ def format_output_txt(
                     if neighbor_seq:
                         try:
                             identity = compute_sequence_identity(first_query_seq, neighbor_seq)
-                            blast_identity_str = f"{identity:.1f}"
+                            blast_identity_str = f"{identity:.1f}%"
                             blast_identity_float = identity
                         except:
                             blast_identity_str = "Error"
                 
-                # Get neighbor Pfam
-                neighbor_pfam = None
+                # Get neighbor Pfam(s)
+                neighbor_pfams: List[str] = []
                 neighbor_pfam_str = "N/A"
                 if pfam_mapping:
-                    neighbor_pfam = get_pfam_for_id(neighbor_id, pfam_mapping)
-                    if neighbor_pfam:
-                        neighbor_pfam_str = neighbor_pfam
+                    neighbor_pfams = get_pfams_for_id(neighbor_id, pfam_mapping)
+                    if neighbor_pfams:
+                        neighbor_pfam_str = ";".join(neighbor_pfams)
+                
                 
                 # Check BLAST Top-N
                 in_blast_top_n_str = "?"
@@ -213,8 +215,8 @@ def format_output_txt(
                 
                 # Generate bio comment based on Pfam
                 bio_comment = generate_pfam_bio_comment(
-                    query_pfam=query_pfam,
-                    neighbor_pfam=neighbor_pfam,
+                    query_pfams=query_pfams,
+                    neighbor_pfams=neighbor_pfams,
                     sequence_identity=blast_identity_float,
                     distance=distance,
                     in_blast_top_n=in_blast_top_n_bool
@@ -234,40 +236,35 @@ def format_output_txt(
         f.write("="*70 + "\n\n")
 
 def generate_pfam_bio_comment(
-    query_pfam: Optional[str],
-    neighbor_pfam: Optional[str],
+    query_pfams: List[str],
+    neighbor_pfams: List[str],
     sequence_identity: Optional[float],
     distance: float,
-    in_blast_top_n: Optional[bool]
+    in_blast_top_n: Optional[bool],
 ) -> str:
-
-    if query_pfam is None or neighbor_pfam is None:
+    if not query_pfams or not neighbor_pfams:
         return "--"
-    
-    same_family = (query_pfam == neighbor_pfam)
-    low_identity = sequence_identity is not None and sequence_identity < 30
-    very_low_identity = sequence_identity is not None and sequence_identity < 20
-    
-    if same_family and low_identity:
-        if very_low_identity:
-            return f"REMOTE HOMOLOG ({query_pfam})"
-        else:
-            return f"Remote homolog? ({query_pfam})"
-    
-    # Same family, higher identity - close homolog
-    if same_family and sequence_identity is not None and sequence_identity >= 30:
-        return f"Close homolog ({query_pfam})"
-    
-    # Same family, no identity info
+
+    qset = set(query_pfams)
+    nset = set(neighbor_pfams)
+    shared = sorted(qset & nset)
+
+    same_family = len(shared) > 0
+    rep = shared[0] if shared else neighbor_pfams[0]  # representative domain for messaging
+
+    low_identity = (sequence_identity is not None and sequence_identity < 30.0)
+    very_low_identity = (sequence_identity is not None and sequence_identity < 20.0)
+
+    # Same-domain hits
     if same_family:
-        return f"Same family ({query_pfam})"
-    
-    # Different family but close in embedding space - potential false positive
-    if not same_family and distance < 3.0:
-        return f"Diff family ({neighbor_pfam}) - FP?"
-    
-    # Different family
-    if not same_family:
-        return f"Diff: {neighbor_pfam}"
-    
-    return "--"
+        if sequence_identity is None:
+            return f"Shared domain ({rep})"
+        if low_identity:
+            return f"REMOTE HOMOLOG ({rep})" if very_low_identity else f"Remote homolog? ({rep})"
+        return f"Close homolog ({rep})"
+
+    # Different-domain hits
+    # (distance threshold is up to you; 3.0 is meaningless if your distances are ~0.1–0.8)
+    if distance < 0.35:  # pick something sensible for your embedding distances
+        return f"No shared domain (closest: {rep}) - FP?"
+    return f"No shared domain (closest: {rep})"

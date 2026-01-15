@@ -266,55 +266,35 @@ def save_results(
     
     print(f"Results saved to: {output_file}")
 
-# def compute_recall_at_n(
-#     ann_results: List[int],
-#     ground_truth: List[int],
-#     N: int
-# ) -> float:
-#     ann_top_n = set(ann_results[:N])
-#     blast_top_n = set(ground_truth[:N])
-    
-#     if len(blast_top_n) == 0:
-#         return 0.0
-    
-#     intersection = ann_top_n & blast_top_n
-#     return len(intersection) / len(blast_top_n)
-
 def compute_recall_at_n(
     ann_results: List[List[Tuple[int, float]]],
     blast_results: Dict[int, List[Tuple]],
     N: int
 ) -> float:
+    total = 0.0
+    counted = 0
+    missing = 0
 
-    total_recall = 0.0
-    num_queries = 0
-    
-    for query_idx, ann_neighbors in enumerate(ann_results):
-        if query_idx not in blast_results:
-            print(f"WARNING: query_idx {query_idx} not in blast_results")
+    for q_idx, ann_neighbors in enumerate(ann_results):
+        if q_idx not in blast_results:
+            missing += 1
             continue
-        
-        # Get BLAST top-N indices - handle both 3 and 4 element tuples
-        blast_hits = blast_results[query_idx][:N]
-        blast_top_n = set([hit[0] for hit in blast_hits])  # hit[0] is always the index
-        
-        if not blast_top_n:
-            print(f"WARNING: No BLAST hits for query {query_idx}")
+
+        # Cap BLAST list to N, then use its actual size
+        blast_hits = blast_results[q_idx][:N]
+        if not blast_hits:
             continue
-        
-        # Get ANN top-N indices
-        ann_top_n = set([idx for idx, _ in ann_neighbors[:N]])
-        
-        # Compute recall
-        intersection = len(blast_top_n & ann_top_n)
-        recall = intersection / len(blast_top_n)
-        
-        total_recall += recall
-        num_queries += 1
-    
-    print(f"Computed recall for {num_queries} queries")
-    
-    if num_queries == 0:
-        return 0.0
-    
-    return total_recall / num_queries
+
+        blast_set = {hit[0] for hit in blast_hits}
+        n_eff = len(blast_set)  # |S_BLAST|
+
+        k = min(n_eff, len(ann_neighbors))
+        ann_set = {idx for idx, _ in ann_neighbors[:k]}
+        total += len(blast_set & ann_set) / n_eff   # keep denom = n_eff (strict)
+        counted += 1
+
+    if missing:
+        print(f"WARNING: {missing} queries missing from blast_results")
+    print(f"Computed recall for {counted} queries")
+
+    return total / counted if counted else 0.0

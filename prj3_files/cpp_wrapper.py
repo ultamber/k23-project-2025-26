@@ -104,7 +104,7 @@ class CppSearchWrapper:
         self,
         binary_path: str = "../bin/search",
         nlsh_script: str = "./nlsh_search.py",
-        dataset_type: str = "protein",
+        dataset_type: str = "sift",
         temp_dir: Optional[str] = None
     ):
 
@@ -185,8 +185,7 @@ class CppSearchWrapper:
             '-L', str(L),
             '-k', str(k),
             '-w', str(w),
-            '-N', str(N),
-            '-type',"sift"
+            '-N', str(N)
         ]
         
         if range_search and R is not None:
@@ -241,8 +240,7 @@ class CppSearchWrapper:
             '-M', str(M),
             '-probes', str(probes),
             '-w', str(w),
-            '-N', str(N),
-            '-type',"sift"
+            '-N', str(N)
         ]
         
         if range_search and R is not None:
@@ -290,8 +288,7 @@ class CppSearchWrapper:
             '-ivfflat',
             '-kclusters', str(kclusters),
             '-nprobe', str(nprobe),
-            '-N', str(N),
-            '-type',"sift"
+            '-N', str(N)
         ]
         
         if range_search and R is not None:
@@ -342,8 +339,7 @@ class CppSearchWrapper:
             '-nprobe', str(nprobe),
             '-Msub', str(Msub),
             '-nbits', str(nbits),
-            '-N', str(N),
-            '-type',"sift"
+            '-N', str(N)
         ]
         
         if range_search and R is not None:
@@ -442,7 +438,7 @@ def run_cpp_method(
     verbose: bool = True
 ) -> Tuple[List[List[Tuple[int, float]]], Dict]:
 
-    wrapper = CppSearchWrapper(binary_path=binary_path, dataset_type='protein')
+    wrapper = CppSearchWrapper(binary_path=binary_path, dataset_type='sift')
     
     try:
         if method == 'lsh':

@@ -5,6 +5,9 @@ import numpy as np
 import json
 import pickle
 
+from utils.uniprot_client import UniProtClient
+from utils.pfam_loader import _get_pfams_for_id
+
 def write_method_results(
     method_name: str,
     output_dir: str,
@@ -21,7 +24,8 @@ def write_method_results(
     N: int = 50,
     display_n: int = 10,
     save_raw_data: bool = True,
-    output_file: Optional[str] = None
+    output_file: Optional[str] = None,
+    uniprot_client: Optional[UniProtClient] = None
 ):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -238,14 +242,15 @@ def write_method_results(
             q_id = query_ids[q_idx] if query_ids and q_idx < len(query_ids) else f"Query_{q_idx}"
             
             # Query Pfam
-            query_pfam = None
+            query_pfam_display = None
             if pfam_mapping:
-                query_pfam = _get_pfam_for_id(q_id, pfam_mapping)
+                query_pfams = _get_pfams_for_id(q_id, pfam_mapping) if pfam_mapping else []
+                query_pfam_display = query_pfams[0] if query_pfams else None
             
             f.write("-" * 100 + "\n")
             f.write(f"Query {q_idx + 1}: {q_id}")
-            if query_pfam:
-                f.write(f" [Pfam: {query_pfam}]")
+            if query_pfam_display:
+                f.write(f" [Pfam: {query_pfam_display}]")
             f.write("\n")
             
             # Query metrics
@@ -266,7 +271,7 @@ def write_method_results(
             blast_top_n_set = set()
             if blast_indices and q_idx in blast_indices:
                 blast_top_n_set = set([hit[0] for hit in blast_indices[q_idx][:N]])
-            
+
             for rank, (neighbor_idx, distance) in enumerate(query_results[:display_n], 1):
                 neighbor_id = database_ids[neighbor_idx] if database_ids and neighbor_idx < len(database_ids) else f"Protein_{neighbor_idx}"
                 
@@ -279,34 +284,28 @@ def write_method_results(
                     in_blast = "Yes" if neighbor_idx in blast_top_n_set else "No"
                 
                 # BLAST Identity % - NEW
-                blast_id_str = "--"
+                blast_id_str = "N/A"
                 identity = _get_blast_identity(q_idx, neighbor_idx, blast_results, blast_identity)
+
                 if identity is not None:
                     blast_id_str = f"{identity:.1f}%"
-                elif in_blast == "Yes":
-                    # In BLAST but no pident - estimate or mark
-                    blast_id_str = ">30%"  # Assumption: if in BLAST top-N, likely >30%
-                elif in_blast == "No" and blast_indices:
-                    blast_id_str = "<30%"  # Not in BLAST top-N, likely low identity
                 
                 # Neighbor Pfam
-                neighbor_pfam = ""
-                if pfam_mapping:
-                    neighbor_pfam = _get_pfam_for_id(neighbor_id, pfam_mapping) or "N/A"
+                neighbor_pfams = _get_pfams_for_id(neighbor_id, pfam_mapping) if pfam_mapping else []
+                neighbor_pfam_display = neighbor_pfams[0] if neighbor_pfams else "N/A"
                 
-                # Generate bio comment
                 comment = _generate_comment_with_identity(
-                    query_pfam, 
-                    neighbor_pfam if pfam_mapping else None, 
-                    distance, 
-                    in_blast == "Yes" if in_blast != "?" else None,
-                    identity
+                    query_pfams=query_pfams,
+                    neighbor_pfams=neighbor_pfams,
+                    distance=distance,
+                    in_blast_top_n=(in_blast == "Yes") if in_blast != "?" else None,
+                    blast_identity=identity
                 )
                 
                 # Write row
                 f.write(f"{rank:<6} | {display_neighbor_id:<25} | {distance:<10.4f} | {blast_id_str:<12} | {in_blast:<12} |")
                 if pfam_mapping:
-                    f.write(f" {neighbor_pfam:<10} |")
+                    f.write(f" {neighbor_pfam_display:<10} |")
                 f.write(f" {comment}\n")
             
             f.write("\n")
@@ -515,43 +514,40 @@ def write_comparison_summary(
     return output_file
 
 def _generate_comment_with_identity(
-    query_pfam: Optional[str], 
-    neighbor_pfam: Optional[str], 
-    distance: float, 
+    query_pfams: List[str],
+    neighbor_pfams: List[str],
+    distance: float,
     in_blast_top_n: Optional[bool],
-    blast_identity: Optional[float]
+    blast_identity: Optional[float],
+    fp_dist_thresh: float = 0.30,   # tune needed
 ) -> str:
     # No Pfam info
-    if query_pfam is None and neighbor_pfam is None:
+    if not query_pfams or not neighbor_pfams:
         if blast_identity is not None and blast_identity < 30:
             return "Low identity (<30%)"
         return "--"
-    
-    same_family = query_pfam == neighbor_pfam if (query_pfam and neighbor_pfam) else False
+
+    qset = set(query_pfams)
+    nset = set(neighbor_pfams)
+    shared = sorted(qset & nset)
+    same_family = len(shared) > 0
+
+    rep = shared[0] if shared else neighbor_pfams[0]
+
     low_identity = blast_identity is not None and blast_identity < 30
     very_low_identity = blast_identity is not None and blast_identity < 20
-    
-    # REMOTE HOMOLOG: Same Pfam family + low sequence identity
+
     if same_family and low_identity:
-        if very_low_identity:
-            return f"REMOTE HOMOLOG (κοινή {query_pfam})"
-        else:
-            return f"Remote homolog? (κοινή {query_pfam})"
-    
-    # Same family, but higher identity - close homolog
-    if same_family and (blast_identity is None or blast_identity >= 30):
-        return f"Close homolog ({query_pfam})"
-    
-    # Same family, unknown identity
+        return f"REMOTE HOMOLOG (shared {rep})" if very_low_identity else f"Remote homolog? (shared {rep})"
+
+    if same_family and blast_identity is not None and blast_identity >= 30:
+        return f"Close homolog (shared {rep})"
+
     if same_family:
-        if in_blast_top_n is False:
-            return f"Remote homolog? ({query_pfam})"
-        return f"Same family ({query_pfam})"
-    
-    # Different family but close in embedding space - possible false positive
-    if neighbor_pfam and query_pfam and neighbor_pfam != query_pfam:
-        if distance < 5.0 and in_blast_top_n is False:
-            return f"Πιθανό false positive"
-        return f"Diff family ({neighbor_pfam})"
-    
-    return "--"
+        return f"Same family (shared {rep})"
+
+    # different families
+    if in_blast_top_n is False and distance <= fp_dist_thresh:
+        return f"Possible FP? (closest domain {rep})"
+
+    return f"Diff family (nearest {rep})"

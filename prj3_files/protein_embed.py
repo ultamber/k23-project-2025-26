@@ -37,6 +37,7 @@ class ESM2Embedder:
             sys.exit(1)
         
         # Μέγιστο μήκος ακολουθίας: 1024 tokens.
+        # 1024 total tokens − 2 special tokens (CLS, EOS) = 1022 residues.
         # Απαραίτητο λόγω της τετραγωνικής πολυπλοκότητας μνήμης του Attention(O(L2)).
         self.model.eval()
         self.max_length = 1022
@@ -101,7 +102,8 @@ class ESM2Embedder:
                 batch_embeddings.append(seq_embedding)
             
             batch_embeddings = torch.stack(batch_embeddings)
-            embeddings_np = batch_embeddings.cpu().numpy()
+            batch_embeddings = torch.nn.functional.normalize(batch_embeddings, p=2, dim=1)
+            embeddings_np = batch_embeddings.cpu().numpy().astype(np.float32)
             all_embeddings.append(embeddings_np)
             all_ids.extend(batch_ids)
         
@@ -255,7 +257,7 @@ def main():
         batch_size=args.batch_size,
         show_progress=True
     )
-    
+
     print("\n Saving results...")
     embedder.save_embeddings(
         embeddings, 
