@@ -110,7 +110,7 @@ def parse_args():
     )
     parser.add_argument(
         '--cpp-nlsh-script',
-        default='./nlsh_search.py',
+        default='../neural_lsh/nlsh_search.py',
         help='Path to Neural LSH Python script'
     )
     parser.add_argument(

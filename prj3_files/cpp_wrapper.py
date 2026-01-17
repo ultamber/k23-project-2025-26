@@ -113,7 +113,7 @@ class CppSearchWrapper:
     def __init__(
         self,
         binary_path: str = "../bin/search",
-        nlsh_script: str = "./nlsh_search.py",
+        nlsh_script: str = "../neural_lsh/nlsh_search.py",
         dataset_type: str = "sift",
         temp_dir: Optional[str] = None
     ):
@@ -385,7 +385,7 @@ class CppSearchWrapper:
         index_dir = os.path.join(self.temp_dir, 'nlsh_index')
         #call nlsh build first , best parameters from previous experiments
         cmd_build = [
-            'python', 'nlsh_build.py',
+            'python', '../neural_lsh/nlsh_build.py',
             '-d', db_path,
             '-i', index_dir,
             '--type', self.dataset_type,
