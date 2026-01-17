@@ -9,3 +9,5 @@ neural_lsh/sweep_experiments/
 results_to_save/
 python/modules/__pycache__/
 neural_lsh/modules/__pycache__/
+prj3_files/**/__pycache__/
+prj3_files/results

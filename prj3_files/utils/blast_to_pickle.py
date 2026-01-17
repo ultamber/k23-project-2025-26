@@ -1,8 +1,6 @@
 import argparse
 import pickle
 from collections import defaultdict
-from pathlib import Path
-
 
 def load_ids(ids_file):
     with open(ids_file, 'r') as f:
@@ -22,38 +20,38 @@ def parse_blast_results(blast_file, database_ids, query_ids, N=50):
     # Create ID to index mappings
     db_id_to_idx = {get_accession(pid): i for i, pid in enumerate(database_ids)}
     query_id_to_idx = {get_accession(pid): i for i, pid in enumerate(query_ids)}
-    
+
     # Parse BLAST results
     blast_results_ids = defaultdict(list)
     blast_results_indices = defaultdict(list)
-    
+
     with open(blast_file, 'r') as f:
         for line in f:
             if line.startswith('#'):
                 continue
-            
+
             parts = line.strip().split('\t')
             if len(parts) < 12:
                 continue
-            
+
             query_id = parts[0]
             hit_id = parts[1]
             pident = float(parts[2])
             evalue = float(parts[10])
             bitscore = float(parts[11])
-            
+
             # Store by ID
             blast_results_ids[query_id].append((hit_id, bitscore, evalue))
-            
+
             # Convert to indices
             query_acc = get_accession(query_id)
             hit_acc = get_accession(hit_id)
-            
+
             if query_acc in query_id_to_idx and hit_acc in db_id_to_idx:
                 query_idx = query_id_to_idx[query_acc]
                 hit_idx = db_id_to_idx[hit_acc]
                 blast_results_indices[query_idx].append((hit_idx, bitscore, evalue))
-    
+
     return {
         'blast_results_ids': dict(blast_results_ids),
         'blast_results_indices': dict(blast_results_indices),
@@ -70,20 +68,20 @@ def main():
     parser.add_argument('--query-ids', required=True, help='Query .ids file')
     parser.add_argument('--output', default='blast_ground_truth.pkl', help='Output pickle file')
     parser.add_argument('--N', type=int, default=50, help='Top-N (default: 50)')
-    
+
     args = parser.parse_args()
-    
+
     print("="*70)
     print("Converting BLAST Results to Pickle Format")
     print("="*70)
-    
+
     # Load IDs
     print(f"\n[1] Loading protein IDs...")
     database_ids = load_ids(args.database_ids)
     query_ids = load_ids(args.query_ids)
     print(f"Database: {len(database_ids)} proteins")
     print(f"Queries: {len(query_ids)} proteins")
-    
+
     # Parse BLAST results
     print(f"\n[2] Parsing BLAST results...")
     results = parse_blast_results(
@@ -94,13 +92,13 @@ def main():
     )
     print(f"Found {len(results['blast_results_ids'])} queries with hits")
     print(f"Converted {len(results['blast_results_indices'])} to indices")
-    
+
     # Save to pickle
     print(f"\n[3] Saving to {args.output}...")
     with open(args.output, 'wb') as f:
         pickle.dump(results, f)
     print(f"Saved!")
-    
+
     print("\n" + "="*70)
     print("Done!")
     print("="*70)

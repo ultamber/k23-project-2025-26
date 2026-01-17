@@ -26,24 +26,30 @@ def load_fvecs(filename: str) -> np.ndarray:
     return np.vstack(vectors) if vectors else np.array([], dtype=np.float32)
 
 def export_for_cpp(
-    output_dir: str,
+    output_dir_str: str,
     database_embeddings: np.ndarray,
-    database_ids: List[str],
+    database_ids: List[str] | None,
     query_embeddings: np.ndarray,
-    query_ids: List[str],
+    query_ids: List[str] | None,
     prefix: str = "protein"
 ) -> dict:
     """
     Export database and query embeddings to fvecs format for C++ consumption.
-    
+
     Creates .fvecs files for vectors and .txt files for IDs.
     Returns dict with paths to created files.
     """
-    output_dir = Path(output_dir)
+    output_dir = Path(output_dir_str)
     output_dir.mkdir(parents=True, exist_ok=True)  # Create output directory if needed
-    
+
+    if database_ids is None:
+        database_ids = []
+
+    if query_ids is None:
+        query_ids = []
+
     paths = {}
-    
+
     # Database
     db_fvecs = output_dir / f"{prefix}_database.fvecs"
     db_ids_file = output_dir / f"{prefix}_database_ids.txt"
@@ -53,7 +59,7 @@ def export_for_cpp(
             f.write(f"{pid}\n")
     paths['database'] = str(db_fvecs)
     paths['database_ids'] = str(db_ids_file)
-    
+
     # Queries export
     query_fvecs = output_dir / f"{prefix}_queries.fvecs"
     query_ids_file = output_dir / f"{prefix}_query_ids.txt"
@@ -63,10 +69,10 @@ def export_for_cpp(
             f.write(f"{pid}\n")
     paths['queries'] = str(query_fvecs)
     paths['query_ids'] = str(query_ids_file)
-    
+
     print(f"\nExported for C++:")
     for k, v in paths.items():
         print(f"  {k}: {v}")
-    
+
     return paths
 
