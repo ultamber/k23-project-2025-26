@@ -31,7 +31,7 @@ def load_sift(path):
                 break  # EOF
 
             dim = np.frombuffer(dim_bytes, dtype="<i4")[0]
-            if dim != 128:
+            if dim != 320:
                 raise ValueError(f"Unexpected SIFT dimension: {dim}")
 
             vec = np.frombuffer(f.read(dim * 4), dtype="<f4")

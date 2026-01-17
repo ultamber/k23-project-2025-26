@@ -379,11 +379,29 @@ class CppSearchWrapper:
         N: int = 50,
         T: int = 50,
         output_file: Optional[str] = None,
-        verbose: bool = True
+        verbose: bool = True,
+        epochs: int = 10,
+        k: int = 4,
+        m: int = 8,
+        hidden_dims: List[int] = [128, 64]
     ) -> Dict:
         db_path, q_path = self._prepare_data(database, queries)
         output_file = output_file or os.path.join(self.temp_dir, 'nlsh_results.txt')
-        
+        #call nlsh build first , best parameters from previous experiments
+        cmd_build = [
+            'python', 'nlsh_build.py',
+            '-d', db_path,
+            '-i', index_dir,
+            '--type', self.dataset_type,
+            '--knn', '15',
+            '-m', str(m),
+            '--method', 'ivfflat',
+            '--epochs', '50',
+            '--layers', '4',
+            '--nodes', '512',
+            '--batch_size', '256',
+            '--lr', '0.01'    
+        ]
         cmd = [
             'python', self.nlsh_script,
             '-d', db_path,
@@ -394,7 +412,7 @@ class CppSearchWrapper:
             '-N', str(N),
             '-T', str(T)
         ]
-        
+        stoud, stderr, elapsed = self._run_command(cmd_build, verbose)
         stdout, stderr, elapsed = self._run_command(cmd, verbose)
         parsed = parse_cpp_output(output_file)
         results = convert_to_ann_results(parsed)
@@ -403,7 +421,7 @@ class CppSearchWrapper:
             'results': results,
             'summary': parsed['summary'],
             'method': 'NeuralLSH',
-            'params': {'N': N, 'T': T},
+            'params': {'N': N, 'T': T , 'k': k, 'm': m, 'epochs': epochs, 'hidden_dims': hidden_dims},
             'elapsed': elapsed,
             'output_file': output_file
         }

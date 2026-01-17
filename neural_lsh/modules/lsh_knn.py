@@ -3,6 +3,8 @@ import tempfile
 import numpy as np
 from pathlib import Path
 
+from sklearn.neighbors import NearestNeighbors
+
 def compute_knn_from_project1(X, k, calculated_output="", search_path="../bin/search", dtype="mnist", 
                     dataset_path="../datasets/MNIST/train-images.idx3-ubyte",
                     query_path="../datasets/MNIST/train-images.idx3-ubyte",
@@ -57,6 +59,35 @@ def compute_knn_from_project1(X, k, calculated_output="", search_path="../bin/se
                 "-w", "2.0" if dtype == "sift" else "4.0",
                 "-N", str(k),
                 "-range", "false"
+            ]
+        elif method == "hypercube":
+            cmd = [
+                str(search_path),
+                "-d", str(dataset_path),
+                "-q", str(query_path),
+                "-o", str(output_file),
+                "-type", dtype,
+                "-hypercube",
+                "-k", "14" if dtype == "sift" else "10",
+                "-M", "10",
+                "-probes", "2",
+                "-N", str(k),
+                "-range", "false"
+            ]
+        elif method == "ivfpq":
+            cmd = [
+                str(search_path),
+                "-d", str(dataset_path),
+                "-q", str(query_path),
+                "-o", str(output_file),
+                "-type", dtype,
+                "-ivfpq",
+                "-N", str(k),
+                "-range", "false",
+                "-kclusters", "128",  # Number of clusters
+                "-nprobe", "32",      # Number of probes
+                "-m", "8",            # Number of subquantizers
+                "-nbits", "8"         # Bits per subvector
             ]
         else:
             raise ValueError(f"Unknown method: {method}")
@@ -252,3 +283,17 @@ def parse_search_output(output_file, n, k):
         print(f"WARNING: {incomplete}/{n*k} neighbors not found")
 
     return knn_graph
+
+def _build_knn_graph(self) -> np.ndarray:
+        nbrs = NearestNeighbors(
+            n_neighbors=self.k_neighbors + 1,  # +1 for self
+            metric='euclidean',
+            algorithm='auto'
+        )
+        nbrs.fit(self.embeddings)
+        _, indices = nbrs.kneighbors(self.embeddings)
+        
+        # Remove self from neighbors
+        knn_graph = indices[:, 1:]  # Skip first column (self)
+        
+        return knn_graph

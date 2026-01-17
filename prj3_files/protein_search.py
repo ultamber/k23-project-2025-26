@@ -580,7 +580,17 @@ def main():
                     )
                 elif method in ['neural-lsh', 'neural']:
                     # Neural LSH needs index directory
-                    print(f"  WARNING: Neural LSH requires pre-built index, skipping C++")
+                    # print(f"  WARNING: Neural LSH requires pre-built index, skipping C++")
+                    result = wrapper.search_neural_lsh(
+                        database=database_embeddings,
+                        queries=query_embeddings,
+                        m=args.nlsh_m,
+                        k=args.nlsh_k,
+                        hidden_dims=args.nlsh_hidden_dims,
+                        epochs=args.nlsh_epochs,
+                        T=args.nlsh_T,
+                        N=args.N
+                    )
                     continue
                 
                 # Store results

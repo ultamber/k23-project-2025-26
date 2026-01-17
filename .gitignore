@@ -9,3 +9,12 @@ neural_lsh/sweep_experiments/
 results_to_save/
 python/modules/__pycache__/
 neural_lsh/modules/__pycache__/
+venv/*
+*/*.pyc
+__pycache__/
+*/__pycache__/
+prj3_files/tuning_results*/*
+prj3_files/results/*
+uniprot_cache/
+swissprot_db*
+neural_lsh/index*

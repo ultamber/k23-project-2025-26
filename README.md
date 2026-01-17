@@ -128,16 +128,17 @@ neural_lsh/
 ```bash
 python nlsh_build.py \
   -d ../datasets/MNIST/input.dat \
-  -i ./mnist_index \
-  -type mnist \
+  -i ./database_index \
+  -type sift \
   --knn 15 \
   -m 100 \
-  --method #lsh/hypercube/ivfflat/ivfpq
+  --method ivfflat \
   --epochs 50 \
   --layers 3 \
   --nodes 64 \
   --batch_size 128 \
-  --lr 0.001
+  --lr 0.001 \
+  --calculated_output ../out_ivfflat.txt
 ```
 
 ### Αναζήτηση

@@ -64,19 +64,19 @@ def parse_args():
                         help="KaHIP mode: 0=FAST, 1=ECO, 2=STRONG")
 
     # MLP training parameters
-    parser.add_argument("--layers", type=int, default=3, 
+    parser.add_argument("--layers", type=int, default=4, 
                         help="Number of MLP layers")
-    parser.add_argument("--nodes", type=int, default=64, 
+    parser.add_argument("--nodes", type=int, default=512, 
                         help="Hidden nodes per layer")
-    parser.add_argument("--dropout", type=float, default=0.0,
+    parser.add_argument("--dropout", type=float, default=0.5,
                         help="Dropout rate (default: 0.0)")
-    parser.add_argument("--epochs", type=int, default=10, 
+    parser.add_argument("--epochs", type=int, default=50, 
                         help="Training epochs")
-    parser.add_argument("--batch_size", type=int, default=128, 
+    parser.add_argument("--batch_size", type=int, default=256, 
                         help="Batch size for training")
     parser.add_argument("--lr", type=float, default=1e-3, 
                         help="Learning rate")
-    parser.add_argument("--weight_decay", type=float, default=0.0,
+    parser.add_argument("--weight_decay", type=float, default=0.001,
                         help="L2 regularization weight decay")
     parser.add_argument("--patience", type=int, default=25, 
                 help="Early stopping patience")
@@ -114,25 +114,28 @@ def load_or_build_knn_graph(X, args,index_dir):
     # Option 2: Build graph
     print(f"\nBuilding k-NN graph (k={args.knn})...")
 
-    print(f" Using algorithm for k-NN graph (default : IVFFLAT)...")
+    print(f" Using SKLEARN NearestNeighbors for exact k-NN...")
     try:
-        from modules.lsh_knn import compute_knn_from_project1
-        knn_graph = compute_knn_from_project1(
-            X,
-            args.knn,
-            args.calculated_output,
-            search_path=args.search_path,
-            dtype=args.type,
-            dataset_path=args.dataset_file,
-            query_path=args.dataset_file,
-            method=args.method
-        )
-        print(f"k-NN graph built successfully")
-
-    except FileNotFoundError as e:
-        print(f"\n  {e}")
-        print(f"File not found.Exiting...")
-        exit(1)
+        # use sklearn nearest neighbors for exact k-NN
+        # if args.use_exact_knn:
+        print(f" Using exact k-NN with sklearn NearestNeighbors...")
+        from sklearn.neighbors import NearestNeighbors
+        nbrs = NearestNeighbors(n_neighbors=args.knn + 1, algorithm='auto').fit(X)
+        distances, indices = nbrs.kneighbors(X)
+        knn_graph = indices[:, 1:]  # Exclude self (first column)
+        print(f" Exact k-NN graph built successfully")
+        # from modules.lsh_knn import compute_knn_from_project1
+        # knn_graph = compute_knn_from_project1(
+        #     X,
+        #     args.knn,
+        #     args.calculated_output,
+        #     search_path=args.search_path,
+        #     dtype=args.type,
+        #     dataset_path=args.dataset_file,
+        #     query_path=args.dataset_file,
+        #     method=args.method
+        # )
+        # print(f"k-NN graph built successfully")
 
     except Exception as e:
         print(f"\n Error building k-NN graph: {e}")
