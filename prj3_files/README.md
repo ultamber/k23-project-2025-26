@@ -298,7 +298,7 @@ add
 python protein_embed.py \
     -i swissprot_50k.fasta \
     -o vectors.npy \
-    --model esm2_t6_8M_UR50D
+    -model esm2_t6_8M_UR50D
 ```
 
 **Εκτέλεση BLAST (Ground Truth):**

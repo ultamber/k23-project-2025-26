@@ -2,22 +2,16 @@ import argparse
 import numpy as np
 from pathlib import Path
 import json
-import time
 import pickle
 import tempfile
 from typing import Dict, List, Tuple, Optional
-from cpp_wrapper import CppSearchWrapper, run_cpp_method
-from methods.lsh import LSH
-from methods.ivfflat import IVFFlat
-from methods.ivfpq import IVFPQ
-from methods.neural_lsh import NeuralLSH
-from methods.hypercube import Hypercube
+from cpp_wrapper import CppSearchWrapper
 from utils.fasta_loader import get_accession, load_fasta
 from utils.evaluation import PerformanceTracker, compute_recall_at_n
 from utils.output_formatter import format_output_txt
 from utils.results_writer import write_method_results, write_comparison_summary
-from utils.blast_runner_fixed import BLASTRunner
-from utils.protein_fvecs import export_for_cpp, save_fvecs, load_fvecs
+from utils.blast_runner import BLASTRunner
+from utils.protein_fvecs import export_for_cpp, load_fvecs
 from utils.uniprot_client import UniProtClient
 
 def parse_args():
@@ -153,20 +147,23 @@ def parse_args():
 def detect_file_type(filepath: str) -> str:
     path = Path(filepath)
     ext = path.suffix.lower()
-    
+
     if ext in ['.fasta', '.fa', '.faa']:
         return 'fasta'
-    elif ext in ['.npy']:
+
+    if ext in ['.npy']:
         return 'npy'
-    elif ext in ['.dat']:
+
+    if ext in ['.dat']:
         return 'dat'
-    elif ext in ['.pkl', '.pickle']:
+
+    if ext in ['.pkl', '.pickle']:
         return 'pkl'
-    else:
-        return 'unknown'
+
+    return 'unknown'
 
 
-def load_embeddings(filepath: str) -> Tuple[np.ndarray, Optional[List[str]], Optional[List[str]]]:
+def load_embeddings(filepath: str) -> Tuple[np.ndarray, Optional[List[str]], Optional[List[Tuple[str, str]]]]:
     path = Path(filepath)
 
     if path.suffix == '.npy':
@@ -180,54 +177,54 @@ def load_embeddings(filepath: str) -> Tuple[np.ndarray, Optional[List[str]], Opt
             embeddings = np.loadtxt(filepath)
     else:
         raise ValueError(f"Unknown embedding format: {path.suffix}")
-    
+
     ids = None
     txt_file = path.with_suffix('.txt')
     ids_file = path.with_suffix('.ids')
-    
+
     if txt_file.exists():
         with open(txt_file, 'r') as f:
             ids = [line.strip() for line in f if line.strip()]
     elif ids_file.exists():
         with open(ids_file, 'r') as f:
             ids = [line.strip() for line in f if line.strip()]
-    
+
     sequences = None
     fasta_file = path.with_suffix('.fasta')
     if fasta_file.exists():
         from utils.fasta_loader import load_fasta
         sequences = load_fasta(str(fasta_file))
-    
+
     return embeddings, ids, sequences
 
 def embed_fasta(
     fasta_file: str,
-    output_prefix: str = None,
+    output_prefix: str = "",
     batch_size: int = 32,
     device: str = 'auto'
 ) -> Tuple[np.ndarray, List[str]]:
     from protein_embed import ESM2Embedder
-    
+
     # Create embedder
     embedder = ESM2Embedder(
         model_name='esm2_t6_8M_UR50D',
         device=device
     )
-    
+
     # Load FASTA sequences
     sequences = load_fasta(fasta_file)
-    
+
     # Generate embeddings
     embeddings, ids = embedder.embed_sequences(
         sequences=sequences,
         batch_size=batch_size,
         show_progress=True
     )
-    
+
     # Save if output_prefix specified
-    if output_prefix:
+    if output_prefix != "":
         embedder.save_embeddings(embeddings, ids, output_prefix)
-    
+
     return embeddings, ids
 
 
@@ -240,20 +237,20 @@ def run_blast_search(
     evalue: float = 0.01,
     threads: int = 8
 ) -> Dict:
-    
+
     blast = BLASTRunner(
         db_fasta=database_fasta,
         evalue_threshold=evalue
     )
-    
+
     blast.build_database(database_fasta)
-    
+
     results = blast.search_fasta(
         query_fasta=query_fasta,
         N=N,
         num_threads=threads
     )
-    
+
     blast_results_indices = None
     if database_ids and query_ids:
         overlap = set(map(get_accession, database_ids)) & set(map(get_accession, query_ids))
@@ -275,20 +272,20 @@ def run_blast_search(
         for i, pid in enumerate(query_ids):
             query_id_to_index[pid] = i
             query_id_to_index[get_accession(pid)] = i  # Map query accession to index
-        
+
         blast_results_indices = {}
         for query_id, hits in results.items():
             query_acc = get_accession(query_id)
             if query_acc in query_id_to_index:
                 query_idx = query_id_to_index[query_acc]
                 hit_indices = []
-                
+
                 for hit in hits:
                     hit_id = hit[0]
                     score = hit[1]
                     evalue_val = hit[2]
                     pident = hit[3] if len(hit) > 3 else None
-                    
+
                     hit_acc = get_accession(hit_id)
                     if hit_acc in db_id_to_index:
                         hit_idx = db_id_to_index[hit_acc]
@@ -296,15 +293,14 @@ def run_blast_search(
                             hit_indices.append((hit_idx, score, evalue_val, pident))
                         else:
                             hit_indices.append((hit_idx, score, evalue_val))
-                
+
                 if hit_indices:
                     blast_results_indices[query_idx] = hit_indices
-    
+
     blast.cleanup()
-    
+
     print(f"BLAST search completed")
-    
-    
+
     return {
         'blast_results_ids': results,
         'blast_results_indices': blast_results_indices,
@@ -313,29 +309,28 @@ def run_blast_search(
 
 def main():
     args = parse_args()
-    
     np.random.seed(args.seed)
-    
+
     print("="*70)
     print("Protein Search with ANN Methods")
     print("="*70)
 
     print(f"\nResolving database...")
-    
+
     database_embeddings = None
     database_ids = None
     database_seqs = None
     database_fasta = None
-    
+
     if args.database:
         db_type = detect_file_type(args.database)
-        
+
         if db_type == 'fasta':
             # Need to embed
             database_fasta = args.database
             print(f"Database: FASTA file ({args.database})")
             print(f"Will generate embeddings...")
-            
+
             # Generate embeddings
             temp_prefix = tempfile.mkdtemp(prefix='db_vectors_')  # Create temp directory for embeddings
             database_embeddings, database_ids = embed_fasta(
@@ -344,30 +339,30 @@ def main():
                 batch_size=args.embed_batch_size,
                 device=args.embed_device
             )
-            
+
             # Load sequences
             database_seqs = load_fasta(args.database)
-        
+
         elif db_type in ['npy', 'dat']:
             # Load embeddings
             database_embeddings, database_ids, database_seqs = load_embeddings(
                 args.database
             )
             print(f"Database: {database_embeddings.shape}")
-        
+
         else:
             raise ValueError(f"Unknown database format: {args.database}")
-    
+
     # Or use --embeddings
     elif args.embeddings:
         database_embeddings, database_ids, database_seqs = load_embeddings(
             args.embeddings
         )
         print(f"Database: {database_embeddings.shape}")
-    
+
     else:
         raise ValueError("Must provide either -d/--database or --embeddings")
-    
+
     pfam_mapping = None
     if args.pfam_map:
         from utils.pfam_loader import load_pfam_mapping
@@ -378,17 +373,17 @@ def main():
     query_ids = None
     query_seqs = None
     query_fasta = None
-    
+
     # Check -q/--queries argument
     if args.queries:
         q_type = detect_file_type(args.queries)
-        
+
         if q_type == 'fasta':
             # Need to embed
             query_fasta = args.queries
             print(f"Queries: FASTA file ({args.queries})")
             print(f"Will generate embeddings...")
-            
+
             # Generate embeddings
             temp_prefix = tempfile.mkdtemp(prefix='query_vectors_')  # Create temp directory for query embeddings
             query_embeddings, query_ids = embed_fasta(
@@ -397,31 +392,30 @@ def main():
                 batch_size=args.embed_batch_size,
                 device=args.embed_device
             )
-            
+
             # Load sequences
             query_seqs = load_fasta(args.queries)
-        
+
         elif q_type in ['npy', 'dat']:
             # Load embeddings
             query_embeddings, query_ids, query_seqs = load_embeddings(
                 args.queries
             )
             print(f"Queries: {query_embeddings.shape}")
-        
+
         else:
             raise ValueError(f"Unknown query format: {args.queries}")
-    
+
     # Or use --query-embeddings
     elif args.query_embeddings:
         query_embeddings, query_ids, query_seqs = load_embeddings(
             args.query_embeddings
         )
         print(f"Queries: {query_embeddings.shape}")
-    
+
     else:
         raise ValueError("Must provide either -q/--queries or --query-embeddings")
-    
-    
+
     # Limit queries if requested
     if args.max_queries:
         query_embeddings = query_embeddings[:args.max_queries]
@@ -440,7 +434,7 @@ def main():
             query_ids=query_ids
         )
         print(f"\\nExported to {args.export_cpp}/ for C++ processing")
-        
+
         if not args.method:
             print("Use --method to also run Python search, or use C++ binary")
             return
@@ -474,15 +468,15 @@ def main():
         print(f"Created query ID mappings: {len(query_ids)} proteins")
 
     print(f"\nLoading BLAST ground truth...")
-    
+
     blast_results = None
     blast_identity = None
-    
+
     if args.ground_truth:
         with open(args.ground_truth, 'rb') as f:
             blast_results = pickle.load(f)
         print(f"Loaded from {args.ground_truth}")
-        
+
         blast_identity = _extract_blast_identity(
             blast_results, 
             db_acc_to_index, 
@@ -490,7 +484,7 @@ def main():
         )
         if blast_identity:
             print(f"Extracted BLAST identity for {len(blast_identity)} queries")
-    
+
     elif args.run_blast and database_fasta and query_fasta:
         print(f"No ground truth provided, running BLAST...")
         blast_results = run_blast_search(
@@ -502,7 +496,7 @@ def main():
             evalue=args.blast_evalue,
             threads=args.blast_threads
         )
-        
+
         blast_identity = _extract_blast_identity(
             blast_results,
             db_acc_to_index,
@@ -516,10 +510,10 @@ def main():
         print(f"\nRunning ANN methods...")
         print(f"Method: {args.method}")
         print(f"N: {args.N}")
-    
+
     tracker = PerformanceTracker()
     all_results = {}
-    
+
     methods_to_run = []
     if args.method == 'all':
         methods_to_run = ['lsh', 'hypercube', 'ivfflat', 'ivfpq', 'neural-lsh']
@@ -527,175 +521,99 @@ def main():
         # Handle aliases
         method_map = {
             'neural': 'neural-lsh',
+            'lsh': 'lsh',
+            'hypercube':'hypercube',
+            'ivfflat':'ivfflat',
+            'ivfpq': 'ivfpq'
         }
         methods_to_run = [method_map.get(args.method, args.method)]
-    if args.use_cpp:
-        print(f"\n  Using C++ implementations ({args.cpp_binary})")
-        wrapper = CppSearchWrapper(
-            binary_path=args.cpp_binary,
-            nlsh_script=args.cpp_nlsh_script,
-            dataset_type='sift'
-        )
-        
-        for method in methods_to_run:
-            print(f"\n  Running {method.upper()} (C++)...")
-            
-            try:
-                if method == 'lsh':
-                    result = wrapper.search_lsh(
-                        database=database_embeddings,
-                        queries=query_embeddings,
-                        L=args.lsh_L,
-                        k=args.lsh_k,
-                        w=args.lsh_w,
-                        N=args.N
-                    )
-                elif method == 'hypercube':
-                    result = wrapper.search_hypercube(
-                        database=database_embeddings,
-                        queries=query_embeddings,
-                        kproj=args.hc_kproj,
-                        w=args.hc_w,
-                        M=args.hc_M,
-                        probes=args.hc_max_probes,
-                        N=args.N
-                    )
-                elif method == 'ivfflat':
-                    result = wrapper.search_ivfflat(
-                        database=database_embeddings,
-                        queries=query_embeddings,
-                        kclusters=args.ivf_n_clusters,
-                        nprobe=args.ivf_n_probe,
-                        N=args.N
-                    )
-                elif method == 'ivfpq':
-                    result = wrapper.search_ivfpq(
-                        database=database_embeddings,
-                        queries=query_embeddings,
-                        kclusters=args.ivf_n_clusters,
-                        nprobe=args.ivf_n_probe,
-                        Msub=args.ivf_M,
-                        nbits=args.ivf_nbits,
-                        N=args.N
-                    )
-                elif method in ['neural-lsh', 'neural']:
-                    # Neural LSH needs index directory
-                    # print(f"  WARNING: Neural LSH requires pre-built index, skipping C++")
-                    result = wrapper.search_neural_lsh(
-                        database=database_embeddings,
-                        queries=query_embeddings,
-                        m=args.nlsh_m,
-                        k=args.nlsh_k,
-                        hidden_dims=args.nlsh_hidden_dims,
-                        epochs=args.nlsh_epochs,
-                        T=args.nlsh_T,
-                        N=args.N
-                    )
-                    continue
-                
-                # Store results
-                all_results[method] = result['results']
-                
-                # Update tracker metrics
-                tracker.metrics[method] = {
-                    'build_time': 0,
-                    'search_time': result['elapsed'],
-                    'qps': len(query_embeddings) / result['elapsed'] if result['elapsed'] > 0 else 0,
-                    **result['summary']
-                }
-                
-                print(f"  Completed in {result['elapsed']:.2f}s")
-                print(f"  QPS: {tracker.metrics[method]['qps']:.2f}")
-                if 'recall_at_n' in result['summary']:
-                    print(f"  Recall@N: {result['summary']['recall_at_n']:.4f}")
-                
-            except Exception as e:
-                print(f"  ERROR running {method}: {e}")
-                continue
-        
-        wrapper.cleanup()
-        
-    else:
-        for method in methods_to_run:
-            print(f"\n  Running {method.upper()}...")
-            
-            # Build index
+
+    print(f"\n  Using C++ implementations ({args.cpp_binary})")
+    wrapper = CppSearchWrapper(
+        binary_path=args.cpp_binary,
+        nlsh_script=args.cpp_nlsh_script,
+        dataset_type='sift'
+    )
+
+    for method in methods_to_run:
+        if method == None:
+            method = ""
+
+        print(f"\n  Running {method.upper()} (C++)...")
+        result = {}
+        try:
             if method == 'lsh':
-                index = LSH(
+                result = wrapper.search_lsh(
+                    database=database_embeddings,
+                    queries=query_embeddings,
                     L=args.lsh_L,
                     k=args.lsh_k,
                     w=args.lsh_w,
-                    seed=args.seed,
-                    metric=args.metric
+                    N=args.N
                 )
-            
             elif method == 'hypercube':
-                index = Hypercube(
+                result = wrapper.search_hypercube(
+                    database=database_embeddings,
+                    queries=query_embeddings,
                     kproj=args.hc_kproj,
                     w=args.hc_w,
-                    max_probes=args.hc_max_probes,
-                    seed=args.seed,
                     M=args.hc_M,
-                    metric=args.metric
+                    probes=args.hc_max_probes,
+                    N=args.N
                 )
-            
             elif method == 'ivfflat':
-                index = IVFFlat(
-                    n_clusters=args.ivf_n_clusters,
-                    n_probe=args.ivf_n_probe,
-                    seed=args.seed,
-                    metric=args.metric
+                result = wrapper.search_ivfflat(
+                    database=database_embeddings,
+                    queries=query_embeddings,
+                    kclusters=args.ivf_n_clusters,
+                    nprobe=args.ivf_n_probe,
+                    N=args.N
                 )
-            
             elif method == 'ivfpq':
-                index = IVFPQ(
-                    n_clusters=args.ivf_n_clusters,
-                    n_probe=args.ivf_n_probe,
-                    M=args.ivf_M,
-                    seed=args.seed,
+                result = wrapper.search_ivfpq(
+                    database=database_embeddings,
+                    queries=query_embeddings,
+                    kclusters=args.ivf_n_clusters,
+                    nprobe=args.ivf_n_probe,
+                    Msub=args.ivf_M,
                     nbits=args.ivf_nbits,
-                    metric=args.metric
+                    N=args.N
                 )
-            
-            elif method == 'neural-lsh':
-                index = NeuralLSH(
+            elif method in ['neural-lsh', 'neural']:
+                # Neural LSH needs index directory
+                # print(f"  WARNING: Neural LSH requires pre-built index, skipping C++")
+                result = wrapper.search_neural_lsh(
+                    database=database_embeddings,
+                    queries=query_embeddings,
                     m=args.nlsh_m,
-                    k_neighbors=args.nlsh_k,
-                    seed=args.seed,
+                    k=args.nlsh_k,
                     hidden_dims=args.nlsh_hidden_dims,
                     epochs=args.nlsh_epochs,
-                    metric=args.metric
+                    T=args.nlsh_T,
+                    N=args.N
                 )
-            
-            # Build or load index 
-            tracker.start_build(method)
-            if method == 'neural-lsh':
-                index.build_index(database_embeddings, epochs=args.nlsh_epochs,use_kahip=True)
-            else:
-                index.build_index(database_embeddings)
-            tracker.end_build()
-            
-            # Search
-            tracker.start_search(method)
 
-            results = []
-            for q_idx in range(len(query_embeddings)):
-                tracker.start_query()
-                
-                if method == 'neural-lsh':
-                    query_result = index.search(query_embeddings[q_idx], N=args.N, T=args.nlsh_T)
-                else:
-                    query_result = index.search(query_embeddings[q_idx], N=args.N)
-                
-                tracker.end_query(method)
-                results.append(query_result)
-            
-            tracker.end_search(method, len(query_embeddings))
-            
-            all_results[method] = results
-            
-            print(f"  Completed in {tracker.metrics[method]['search_time']:.2f}s")
+            # Store results
+            all_results[method] = result['results']
+
+            # Update tracker metrics
+            tracker.metrics[method] = {
+                'build_time': 0,
+                'search_time': result['elapsed'],
+                'qps': len(query_embeddings) / result['elapsed'] if result['elapsed'] > 0 else 0,
+                **result['summary']
+            }
+
+            print(f"  Completed in {result['elapsed']:.2f}s")
             print(f"  QPS: {tracker.metrics[method]['qps']:.2f}")
+            if 'recall_at_n' in result['summary']:
+                print(f"  Recall@N: {result['summary']['recall_at_n']:.4f}")
+
+        except Exception as e:
+            print(f"  ERROR running {method}: {e}")
+            continue
+
+    wrapper.cleanup()
 
     if blast_results and 'blast_results_indices' in blast_results:
         blast_indices = blast_results['blast_results_indices']
@@ -707,20 +625,20 @@ def main():
         print("WARNING: Skipping BLAST evaluation - no blast_results_indices!")
     print(f"\nSaving results")
     output_path = Path(args.output)
-    
+
     # Prepare results dict
     results_dict = {
         'N': args.N,
         'num_queries': len(query_embeddings),
         'methods': {}
     }
-    
+
     for method in all_results.keys():
         results_dict['methods'][method] = {
             **tracker.metrics[method],
             'results': all_results[method]
         }
-    
+
     # Check output format
     if output_path.suffix == '.txt':
         output_dir = output_path.parent / output_path.stem
@@ -738,7 +656,7 @@ def main():
             display_n=10
         )
         print(f"Results saved to {args.output} (formatted text)")
-    
+
     else:
         # Save as JSON (directory)
         output_path.mkdir(parents=True, exist_ok=True)
@@ -747,12 +665,13 @@ def main():
         comparison_file = output_path / 'comparison.json'
         with open(comparison_file, 'w') as f:
             json.dump(results_dict, f, indent=2, default=str)
-        
+
         print(f"Results saved to {output_path}/")
 
     # Prepare individual method result files
     output_dir.mkdir(parents=True, exist_ok=True)
-        
+    output_file = output_dir / f""
+
     # Write individual method results and format names
     for method_name, method_results in all_results.items():
         method_slug = method_name.lower().replace(' ', '_').replace('-', '_')
@@ -788,41 +707,41 @@ def main():
             N=args.N,
             display_n=10,
             save_raw_data=True,
-            output_file=output_file,
+            output_file=output_file.as_posix(),
             uniprot_client=uniprot_client,
             uniprot_delay=0.2 # rate limit
         )
-    
+
     write_comparison_summary(
         output_dir=str(output_dir),
         all_metrics=tracker.metrics,
         N=args.N
     )
-    
+
     print("Protein Search Completed")
-    
+
 
 def _extract_blast_identity(
     blast_results: Optional[Dict],
     db_acc_to_index: Dict[str, int],
     query_acc_to_index: Dict[str, int]
 ) -> Optional[Dict[int, Dict[int, float]]]:
-    
+
     if not blast_results:
         return None
-        
+
     blast_identity = {}
-    
+
     if 'blast_results_ids' in blast_results:
         for query_id, hits in blast_results['blast_results_ids'].items():
             query_acc = get_accession(query_id)
-            
+
             if query_acc not in query_acc_to_index:
                 continue
-            
+
             q_idx = query_acc_to_index[query_acc]
             blast_identity[q_idx] = {}
-            
+
             for hit in hits:
                 if len(hit) >= 4:
                     hit_id, bitscore, evalue, pident = hit[0], hit[1], hit[2], hit[3]  # Unpack hit with identity
@@ -831,17 +750,17 @@ def _extract_blast_identity(
                     pident = None
                 else:
                     continue  # Skip malformed hits
-                
+
                 hit_acc = get_accession(hit_id)
-                
+
                 if hit_acc in db_acc_to_index:
                     n_idx = db_acc_to_index[hit_acc]
                     if pident is not None:
                         blast_identity[q_idx][n_idx] = pident
-    
+
     if not blast_identity or all(len(v) == 0 for v in blast_identity.values()):
         return None
-    
+
     return blast_identity
 
 if __name__ == '__main__':

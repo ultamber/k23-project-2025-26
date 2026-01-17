@@ -1,9 +1,63 @@
+import os
 import subprocess
 import tempfile
 from pathlib import Path
 from typing import List, Tuple, Dict, Optional
-import numpy as np
 import pickle
+
+
+def get_accession(protein_id: str) -> str:
+    """
+    Extract accession from various protein ID formats.
+
+    Handles:
+    - sp|Q5F928|UVRC_NEIG1 -> Q5F928
+    - tr|A0A009I3Y5|A0A009I3Y5_ACIBA -> A0A009I3Y5
+    - Q5F928 -> Q5F928
+    - A0A009I3Y5 ACIBA -> A0A009I3Y5
+    """
+    protein_id = protein_id.strip()
+
+    # UniProt format: sp|ACCESSION|ENTRY_NAME or tr|ACCESSION|ENTRY_NAME
+    if '|' in protein_id:
+        parts = protein_id.split('|')
+        if len(parts) >= 2:
+            return parts[1]
+
+    # Space-separated: ACCESSION DESCRIPTION
+    if ' ' in protein_id:
+        return protein_id.split()[0]
+
+    return protein_id
+
+
+def build_id_mapping(ids: List[str]) -> Dict[str, int]:
+    id_to_index = {}
+
+    for i, pid in enumerate(ids):
+        pid = pid.strip()
+
+        # Add full ID
+        id_to_index[pid] = i
+        id_to_index[pid.split()[0]] = i  # Add accession if space-separated
+
+        if '|' in pid:
+            parts = pid.split('|')
+
+            # Add accession (e.g., Q5F928)
+            if len(parts) >= 2:
+                id_to_index[parts[1]] = i
+
+            # Add entry name (e.g., UVRC_NEIG1)
+            if len(parts) >= 3:
+                entry_name = parts[2].split()[0]  # Remove description if present
+                id_to_index[entry_name] = i
+        else:
+            # Simple format: just accession or accession + description
+            accession = pid.split()[0]
+            id_to_index[accession] = i
+
+    return id_to_index
 
 
 class BLASTRunner:
@@ -15,510 +69,385 @@ class BLASTRunner:
         blastp_path: str = 'blastp',
         evalue_threshold: float = 0.01
     ):
-
         self.db_fasta = db_fasta
         self.makeblastdb_path = makeblastdb_path
         self.blastp_path = blastp_path
         self.evalue_threshold = evalue_threshold
-        
-        self.db_path = None  # Path to BLAST database (set by build_database)
-        self.temp_dir = None  # Temporary directory for database files
-    
+
+        self.db_path = None
+        self.temp_dir = None
+
     def build_database(self, fasta_file: str, output_db: Optional[str] = None):
-        """
-        Build BLAST protein database from FASTA file.
-        Creates a BLAST-formatted database that can be used for subsequent searches.
-        """
         if output_db is None:
-            # Use temp directory with proper cleanup
             self.temp_dir = tempfile.mkdtemp(prefix='blast_db_')
             output_db = str(Path(self.temp_dir) / 'blast_db')
-        
+
         self.db_path = output_db
-        
+
         print(f"Building BLAST database...")
-        print(f"Input: {fasta_file}")
-        print(f"Output: {output_db}")
-        
+        print(f"  Input: {fasta_file}")
+        print(f"  Output: {output_db}")
+
         cmd = [
             self.makeblastdb_path,
             '-in', fasta_file,
             '-dbtype', 'prot',
             '-out', output_db
         ]
-        
+
         try:
-            result = subprocess.run(
-                cmd,
-                check=True,
-                capture_output=True,
-                text=True
-            )
-            print(f"BLAST database created")
-            
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            print(f"  BLAST database created")
         except subprocess.CalledProcessError as e:
-            print(f"makeblastdb failed:")
-            print(e.stderr)
+            print(f"  makeblastdb failed: {e.stderr}")
             raise
         except FileNotFoundError:
-            raise RuntimeError(
-                f"makeblastdb not found at: {self.makeblastdb_path}\n"
-                f"Install BLAST+ tools or provide correct path"
-            )
-    
+            raise RuntimeError(f"makeblastdb not found at: {self.makeblastdb_path}")
+
     def search_fasta(
         self,
         query_fasta: str,
         N: int = 50,
         num_threads: int = 8,
         max_target_seqs: int = 100
-    ) -> Dict[str, List[Tuple[str, float, float]]]:
-        """
-        Run BLAST search against the database.
-        Performs protein-protein BLAST search and returns top-N hits per query.s
-        """
+    ) -> Dict[str, List[Tuple[str, float, float, float]]]:
+
         if self.db_path is None:
             if self.db_fasta is None:
                 raise RuntimeError("No database specified")
             self.build_database(self.db_fasta)
-        
+
         print(f"\nRunning BLAST search...")
-        print(f"Query: {query_fasta}")
-        print(f"Database: {self.db_path}")
-        print(f"N: {N}")
-        print(f"Threads: {num_threads}")
-        
-        # Create temp output file
+        print(f"  Query: {query_fasta}")
+        print(f"  Database: {self.db_path}")
+        print(f"  N: {N}, Threads: {num_threads}")
+
         output_fd, output_file = tempfile.mkstemp(prefix='blast_results_', suffix='.tsv')
-        
-        # BLAST command with tabular output
-        # Format 6 fields: qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore
+
         cmd = [
             self.blastp_path,
             '-db', self.db_path,
             '-query', query_fasta,
             '-out', output_file,
-            '-outfmt', '6 qseqid sseqid pident length evalue bitscore',  # Tabular format with key fields
+            '-outfmt', '6 qseqid sseqid pident length evalue bitscore',
             '-evalue', str(self.evalue_threshold),
             '-num_threads', str(num_threads),
             '-max_target_seqs', str(max_target_seqs)
         ]
-        
+        os.close(output_fd)
         try:
-            result = subprocess.run(
-                cmd,
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=3600  # 1 hour timeout
-            )
-            
-            print(f"BLAST search completed")
-            
-            # Parse results
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=3600)
+            print(f"  BLAST search completed")
             results = self._parse_blast_output(output_file, N)
-            
-            # Cleanup
             Path(output_file).unlink(missing_ok=True)
-            
             return results
-            
+
         except subprocess.CalledProcessError as e:
-            print(f"BLAST search failed:")
-            print(e.stderr)
+            print(f"  BLAST search failed: {e.stderr}")
             raise
         except subprocess.TimeoutExpired:
-            print(f"BLAST search timed out (>1 hour)")
+            print(f"  BLAST search timed out")
             raise
-        except FileNotFoundError:
-            raise RuntimeError(
-                f"blastp not found at: {self.blastp_path}\n"
-                f"Install BLAST+ tools or provide correct path"
-            )
-    
+
+
     def _parse_blast_output(
         self,
         output_file: str,
         N: int
-        ) -> Dict[str, List[Tuple[str, float, float, float]]]:
-        """
-        Parse BLAST tabular output file.
+    ) -> Dict[str, List[Tuple[str, float, float, float]]]:
 
-        Reads BLAST format 6 output and extracts top-N hits per query,
-        sorted by bitscore in descending order.
-        Returns:
-            Dictionary mapping query IDs to lists of (subject_id, bitscore, evalue, pident) tuples
-        """
         results = {}
-        
+
         with open(output_file, 'r') as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith('#'):
                     continue
-                
+
                 parts = line.split('\t')
                 if len(parts) < 6:
                     continue
-                
+
                 query_id = parts[0]
                 subject_id = parts[1]
-                pident = float(parts[2])  # Percent identity
-                length = int(parts[3])    # Alignment length
-                evalue = float(parts[4])  # E-value
-                bitscore = float(parts[5])  # Bit score
-                
-                # Skip self-hits (query matching itself)
-                if query_id == subject_id:
+                pident = float(parts[2])
+                length = int(parts[3])
+                evalue = float(parts[4])
+                bitscore = float(parts[5])
+
+                # Skip self-hits
+                if get_accession(query_id) == get_accession(subject_id):
                     continue
-                
-                # Skip hits above E-value threshold
+
                 if evalue > self.evalue_threshold:
                     continue
-                
+
                 if query_id not in results:
                     results[query_id] = []
-                
+
+                # Store all 4 values including pident
                 results[query_id].append((subject_id, bitscore, evalue, pident))
-        
-        # Sort by bitscore (descending) and keep top-N
+
+        # Sort by bitscore and keep top N
         for query_id in results:
             results[query_id].sort(key=lambda x: x[1], reverse=True)
             results[query_id] = results[query_id][:N]
-        
-        print(f"Parsed results for {len(results)} queries (with identity %)")
-        
+
+        print(f"  Parsed results for {len(results)} queries")
         return results
-    
-    def results_to_id_lists(
+
+    def convert_to_indices(
         self,
-        results: Dict[str, List[Tuple[str, float, float]]],
-        id_to_index: Optional[Dict[str, int]] = None
-    ) -> Dict[str, List[int]]:
-        """
-        Convert BLAST results from ID-based to index-based format.
-        """
-        if id_to_index is None:
-            # Assume IDs are already indices
-            return {
-                qid: [int(hit[0]) for hit in hits]
-                for qid, hits in results.items()
-            }
-        
-        # Map IDs to indices
-        id_lists = {}
+        results: Dict[str, List[Tuple]],
+        db_id_to_index: Dict[str, int],
+        query_id_to_index: Dict[str, int],
+        verbose: bool = True
+    ) -> Dict[int, List[Tuple]]:
+
+        blast_indices = {}
+
+        stats = {
+            'total_queries': 0,
+            'converted_queries': 0,
+            'total_hits': 0,
+            'converted_hits': 0,
+            'missing_queries': [],
+            'missing_hits': set()
+        }
+
         for query_id, hits in results.items():
-            indices = []
-            for hit_id, _, _ in hits:
-                if hit_id in id_to_index:
-                    indices.append(id_to_index[hit_id])
-            id_lists[query_id] = indices
-        
-        return id_lists
-    
-    def save_results(self, results: Dict, output_file: str):
-        """
-        Save BLAST results to a pickle file.
-        """
-        output_path = Path(output_file)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        with open(output_path, 'wb') as f:
-            pickle.dump(results, f)
-        
-        print(f"BLAST results saved to: {output_file}")
-    
-    @staticmethod
-    def load_results(input_file: str) -> Dict:
-        """
-        Load BLAST results from a pickle file.
-        """
-        with open(input_file, 'rb') as f:
-            results = pickle.load(f)
-        
-        print(f"BLAST results loaded from: {input_file}")
-        return results
-    
+            stats['total_queries'] += 1
+
+            # Try multiple forms of query ID
+            query_idx = None
+            query_acc = get_accession(query_id)
+
+            for qid_form in [query_id, query_acc]:
+                if qid_form in query_id_to_index:
+                    query_idx = query_id_to_index[qid_form]
+                    break
+
+            if query_idx is None:
+                stats['missing_queries'].append(query_id)
+                continue
+
+            # Convert hits
+            hit_indices = []
+            for hit in hits:
+                stats['total_hits'] += 1
+
+                hit_id = hit[0]
+                bitscore = hit[1]
+                evalue = hit[2]
+                pident = hit[3] if len(hit) > 3 else None
+
+                # Try multiple forms of hit ID
+                hit_idx = None
+                hit_acc = get_accession(hit_id)
+
+                for hid_form in [hit_id, hit_acc]:
+                    if hid_form in db_id_to_index:
+                        hit_idx = db_id_to_index[hid_form]
+                        break
+
+                if hit_idx is not None:
+                    stats['converted_hits'] += 1
+                    # Include pident in the tuple!
+                    if pident is not None:
+                        hit_indices.append((hit_idx, bitscore, evalue, pident))
+                    else:
+                        hit_indices.append((hit_idx, bitscore, evalue))
+                else:
+                    stats['missing_hits'].add(hit_id)
+
+            if hit_indices:
+                blast_indices[query_idx] = hit_indices
+                stats['converted_queries'] += 1
+
+        if verbose:
+            print(f"\n  Conversion stats:")
+            print(f"    Queries: {stats['converted_queries']}/{stats['total_queries']}")
+            print(f"    Hits: {stats['converted_hits']}/{stats['total_hits']}")
+
+            if stats['missing_queries']:
+                print(f"    Missing queries: {len(stats['missing_queries'])}")
+                if len(stats['missing_queries']) <= 3:
+                    for qid in stats['missing_queries']:
+                        print(f"      - {qid}")
+
+            if stats['missing_hits']:
+                print(f"    Missing hits: {len(stats['missing_hits'])}")
+                if len(stats['missing_hits']) <= 3:
+                    for hid in list(stats['missing_hits'])[:3]:
+                        print(f"      - {hid}")
+
+        return blast_indices
+
     def cleanup(self):
         if self.db_path:
-            # Remove database files (all BLAST database extensions)
             for ext in ['.phr', '.pin', '.psq', '.pdb', '.pot', '.ptf', '.pto']:
                 db_file = Path(f"{self.db_path}{ext}")
                 db_file.unlink(missing_ok=True)
-            
-            # Remove temp directory if created
+
             if self.temp_dir and Path(self.temp_dir).exists():
                 import shutil
                 shutil.rmtree(self.temp_dir)
-            
-            print(f"Cleaned up BLAST database")
+
+
+def run_blast_and_convert(
+    database_fasta: str,
+    query_fasta: str,
+    database_ids: List[str],
+    query_ids: List[str],
+    N: int = 50,
+    evalue: float = 0.01,
+    threads: int = 8,
+    verbose: bool = True
+) -> Dict:
+    """
+    Complete BLAST workflow: search and convert to indices.
+
+    This is the function to call from protein_search.py.
+
+    Returns:
+        Dict with:
+        - 'blast_results_ids': Original ID-based results
+        - 'blast_results_indices': Index-based results for recall calculation
+        - 'params': Search parameters
+    """
+
+    # Build comprehensive ID mappings
+    if verbose:
+        print(f"\nBuilding ID mappings...")
+        print(f"  Database: {len(database_ids)} proteins")
+        print(f"  Queries: {len(query_ids)} proteins")
+
+    db_id_to_index = build_id_mapping(database_ids)
+    query_id_to_index = build_id_mapping(query_ids)
+
+    if verbose:
+        print(f"  Database mapping entries: {len(db_id_to_index)}")
+        print(f"  Query mapping entries: {len(query_id_to_index)}")
+
+        # Debug: show sample mappings
+        sample_db_ids = list(database_ids)[:2]
+        for sid in sample_db_ids:
+            acc = get_accession(sid)
+            print(f"    DB sample: '{sid}' -> acc='{acc}'")
+
+    # Run BLAST
+    blast = BLASTRunner(evalue_threshold=evalue)
+    blast.build_database(database_fasta)
+
+    results_ids = blast.search_fasta(
+        query_fasta=query_fasta,
+        N=N,
+        num_threads=threads
+    )
+
+    # Debug: show sample BLAST results
+    if verbose and results_ids:
+        sample_qid = list(results_ids.keys())[0]
+        sample_hits = results_ids[sample_qid][:2]
+        print(f"\n  Sample BLAST results:")
+        print(f"    Query: '{sample_qid}' -> acc='{get_accession(sample_qid)}'")
+        for hit in sample_hits:
+            hit_id = hit[0]
+            hit_acc = get_accession(hit_id)
+            in_db = hit_acc in db_id_to_index
+            print(f"    Hit: '{hit_id}' -> acc='{hit_acc}' in_db={in_db}")
+
+    # Convert to indices
+    results_indices = blast.convert_to_indices(
+        results=results_ids,
+        db_id_to_index=db_id_to_index,
+        query_id_to_index=query_id_to_index,
+        verbose=verbose
+    )
+
+    blast.cleanup()
+
+    return {
+        'blast_results_ids': results_ids,
+        'blast_results_indices': results_indices,
+        'params': {
+            'N': N,
+            'evalue': evalue,
+            'database_fasta': database_fasta,
+            'query_fasta': query_fasta
+        }
+    }
 
 
 if __name__ == '__main__':
-    # Command-line interface for running BLAST searches and saving results
     import argparse
-    
-    parser = argparse.ArgumentParser(
-        description="Run BLAST and save results for ground truth",
-        formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-    
-    # Required arguments
-    parser.add_argument(
-        '-d', '--database',
-        required=True,
-        help='Database FASTA file'
-    )
-    parser.add_argument(
-        '-q', '--queries',
-        required=True,
-        help='Query FASTA file'
-    )
-    parser.add_argument(
-        '-o', '--output',
-        required=True,
-        help='Output pickle file'
-    )
-    
-    # Optional ID mapping (for embeddings)
-    parser.add_argument(
-        '--database-ids',
-        help='Database protein IDs file (.ids from protein_embed.py)'
-    )
-    parser.add_argument(
-        '--query-ids',
-        help='Query protein IDs file (.ids from protein_embed.py)'
-    )
-    
-    # BLAST parameters
-    parser.add_argument(
-        '--N',
-        type=int,
-        default=50,
-        help='Number of top hits to keep per query (default: 50)'
-    )
-    parser.add_argument(
-        '--evalue',
-        type=float,
-        default=0.01,
-        help='E-value threshold (default: 0.01)'
-    )
-    parser.add_argument(
-        '--threads',
-        type=int,
-        default=8,
-        help='Number of CPU threads (default: 8)'
-    )
-    parser.add_argument(
-        '--max-target-seqs',
-        type=int,
-        default=100,
-        help='Maximum target sequences (default: 100)'
-    )
-    
-    # BLAST binary paths
-    parser.add_argument(
-        '--makeblastdb',
-        default='makeblastdb',
-        help='Path to makeblastdb binary'
-    )
-    parser.add_argument(
-        '--blastp',
-        default='blastp',
-        help='Path to blastp binary'
-    )
-    
+
+    parser = argparse.ArgumentParser(description="Run BLAST and save results")
+    parser.add_argument('-d', '--database', required=True, help='Database FASTA')
+    parser.add_argument('-q', '--queries', required=True, help='Query FASTA')
+    parser.add_argument('-o', '--output', required=True, help='Output pickle file')
+    parser.add_argument('--database-ids', help='Database protein IDs file')
+    parser.add_argument('--query-ids', help='Query protein IDs file')
+    parser.add_argument('--N', type=int, default=50, help='Top N hits')
+    parser.add_argument('--evalue', type=float, default=0.01, help='E-value threshold')
+    parser.add_argument('--threads', type=int, default=8, help='CPU threads')
+
     args = parser.parse_args()
-    
+
     print("="*70)
-    print("Blast runner")
+    print("BLAST Runner (Fixed)")
     print("="*70)
 
-    db_id_to_index = None
-    query_id_to_index = None
-    
-    if args.database_ids or args.query_ids:
-        print(f"\nLoading ID mappings...")
-        
-        if args.database_ids:
-            with open(args.database_ids, 'r') as f:
-                db_ids = [line.strip() for line in f]
-            db_id_to_index = {pid: i for i, pid in enumerate(db_ids)}
-            print(f"Database IDs: {len(db_ids)} proteins")
-        
-        if args.query_ids:
-            with open(args.query_ids, 'r') as f:
-                query_ids = [line.strip() for line in f]
-            query_id_to_index = {pid: i for i, pid in enumerate(query_ids)}
-            print(f"Query IDs: {len(query_ids)} proteins")
+    # Load ID mappings
+    database_ids = None
+    query_ids = None
 
-    print(f"\nInitializing BLAST...")
-    
-    try:
-        blast = BLASTRunner(
-            db_fasta=args.database,
-            makeblastdb_path=args.makeblastdb,
-            blastp_path=args.blastp,
-            evalue_threshold=args.evalue
-        )
-    except Exception as e:
-        print(f"\nError: {e}")
-        print("\nMake sure BLAST+ is installed:")
-        print("  Ubuntu/Debian: sudo apt-get install ncbi-blast+")
-        print("  macOS: brew install blast")
-        print("  Or download from: https://blast.ncbi.nlm.nih.gov/")
-        exit(1)
+    if args.database_ids:
+        with open(args.database_ids, 'r') as f:
+            database_ids = [line.strip() for line in f if line.strip()]
+        print(f"Loaded {len(database_ids)} database IDs")
 
-    print(f"\nBuilding BLAST database...")
-    blast.build_database(args.database)
-    
-    print(f"\nRunning BLAST search...")
-    print(f"Query file: {args.queries}")
-    print(f"Top N: {args.N}")
-    print(f"E-value threshold: {args.evalue}")
-    print(f"Threads: {args.threads}")
-    print(f"Max target seqs: {args.max_target_seqs}")
-    
-    try:
-        results = blast.search_fasta(
-            args.queries,
+    if args.query_ids:
+        with open(args.query_ids, 'r') as f:
+            query_ids = [line.strip() for line in f if line.strip()]
+        print(f"Loaded {len(query_ids)} query IDs")
+
+    # Run BLAST
+    if database_ids and query_ids:
+        overlap = set(map(get_accession, database_ids)) & set(map(get_accession, query_ids))
+        if overlap:
+            print(f"WARNING: {len(overlap)} query accessions also appear in database (possible leakage)")
+        results = run_blast_and_convert(
+            database_fasta=args.database,
+            query_fasta=args.queries,
+            database_ids=database_ids,
+            query_ids=query_ids,
             N=args.N,
-            num_threads=args.threads,
-            max_target_seqs=args.max_target_seqs
+            evalue=args.evalue,
+            threads=args.threads
         )
-    except Exception as e:
-        print(f"\nBLAST search failed: {e}")
+    else:
+        # Run without ID conversion
+        blast = BLASTRunner(evalue_threshold=args.evalue)
+        blast.build_database(args.database)
+        results_ids = blast.search_fasta(args.queries, N=args.N, num_threads=args.threads)
         blast.cleanup()
-        exit(1)
 
-    print(f"\nProcessing results...")
-    
-    # Prepare output data
-    output_data = {
-        'blast_results_ids': results,
-        'params': {
-            'N': args.N,
-            'evalue': args.evalue,
-            'database': str(args.database),
-            'queries': str(args.queries),
-            'threads': args.threads,
+        results = {
+            'blast_results_ids': results_ids,
+            'params': {'N': args.N, 'evalue': args.evalue}
         }
-    }
-    
-    # Convert to indices if mappings available
-    if db_id_to_index and query_id_to_index:
-        print("  Converting to index-based format...")
-        
-        # Import get_accession if available
-        try:
-            from utils.fasta_loader import get_accession
-        except:
-            # Fallback: use ID as-is
-            get_accession = lambda x: x.split('|')[1] if '|' in x else x
-        
-        blast_results_indices = {}
-        conversion_stats = {
-            'total_queries': 0,
-            'converted_queries': 0,
-            'missing_query_ids': [],
-            'missing_hit_ids': set()
-        }
-        
-        for query_id, hits in results.items():
-            conversion_stats['total_queries'] += 1
-            
-            # Get query index
-            query_acc = get_accession(query_id)
-            
-            if query_acc not in query_id_to_index:
-                conversion_stats['missing_query_ids'].append(query_acc)
-                continue
-            
-            query_idx = query_id_to_index[query_acc]
-            
-            # Convert hit IDs to indices
-            hit_indices = []
-            for hit in hits:
-                if len(hit) >= 4:
-                    hit_id, score, evalue, pident = hit[0], hit[1], hit[2], hit[3]
-                else:
-                    hit_id, score, evalue = hit[0], hit[1], hit[2]
-                    pident = None
-                hit_acc = get_accession(hit_id)
-                
-                if hit_acc in db_id_to_index:
-                    hit_idx = db_id_to_index[hit_acc]
-                    hit_indices.append((hit_idx, score, evalue))
-                else:
-                    conversion_stats['missing_hit_ids'].add(hit_acc)
-            
-            if hit_indices:  # Only add if we found some hits
-                blast_results_indices[query_idx] = hit_indices
-                conversion_stats['converted_queries'] += 1
-        
-        output_data['blast_results_indices'] = blast_results_indices
-        
-        # Print conversion stats
-        print(f"Converted {conversion_stats['converted_queries']}/{conversion_stats['total_queries']} queries")
-        
-        if conversion_stats['missing_query_ids']:
-            print(f"{len(conversion_stats['missing_query_ids'])} query IDs not found in mapping")
-            if len(conversion_stats['missing_query_ids']) <= 5:
-                for qid in conversion_stats['missing_query_ids']:
-                    print(f"- {qid}")
-        
-        if conversion_stats['missing_hit_ids']:
-            print(f"{len(conversion_stats['missing_hit_ids'])} hit IDs not found in mapping")
-            if len(conversion_stats['missing_hit_ids']) <= 5:
-                for hid in list(conversion_stats['missing_hit_ids'])[:5]:
-                    print(f"- {hid}")
-    
-    print(f"\nSaving results...")
-    
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    with open(output_path, 'wb') as f:
-        pickle.dump(output_data, f)
-    
-    print(f"Results saved to: {output_path}")
-    
-    
-    print("SUMMARY")
-    print(f"{'='*70}")
-    print(f"Queries processed: {len(results)}")
-    print(f"Top-N per query: {args.N}")
-    print(f"E-value threshold: {args.evalue}")
-    
-    # Print sample results
-    if results:
-        sample_query = list(results.keys())[0]
-        sample_hits = results[sample_query][:5]
-        
-        print(f"\nSample results (query: {sample_query}):")
-        for hit in sample_hits:
-            hit_id = hit[0]
-            score = hit[1]
-            evalue = hit[2]
-            pident = hit[3] if len(hit) > 3 else None
-            print(f"{hit_id}: score={score:.1f}, E={evalue:.2e}")
-    
-    # Data format info
-    print(f"\nOutput format:")
-    print(f"- blast_results_ids: ID-based results")
-    if 'blast_results_indices' in output_data:
-        print(f"- blast_results_indices: Index-based results")
-    print(f"- params: Search parameters")
-    
-    print(f"\nUsage in protein_search.py:")
-    print(f"python protein_search.py \\")
-    print(f"--ground-truth {args.output} \\")
-    print(f"--embeddings <embeddings.npy> \\")
-    print(f"--queries <queries.npy>")
-    
-    # Cleanup
-    blast.cleanup()
-    
-    
-    print("BLAST SEARCH COMPLETED")
-    
+
+    # Save
+    with open(args.output, 'wb') as f:
+        pickle.dump(results, f)
+
+    print(f"\nResults saved to: {args.output}")
+
+    # Summary
+    print(f"\nSummary:")
+    print(f"  Queries with results: {len(results.get('blast_results_ids', {}))}")
+    if 'blast_results_indices' in results:
+        print(f"  Queries converted to indices: {len(results['blast_results_indices'])}")
+
+    print("\nDone!")

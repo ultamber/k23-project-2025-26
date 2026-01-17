@@ -202,10 +202,10 @@ def analyze_pfam_coverage(query_ids: List[str], database_ids: List[str], pfam_ma
 
 if __name__ == '__main__':
     import sys
-    
+
     if len(sys.argv) > 1:
         mapping = load_pfam_mapping(sys.argv[1])
-        
+
         print("\nPfam families found:")
         families = {}
         for acc, data in mapping.items():
@@ -213,7 +213,7 @@ if __name__ == '__main__':
             if pfam not in families:
                 families[pfam] = []
             families[pfam].append(acc)
-        
+
         for pfam, members in sorted(families.items()):
             desc = PFAM_DESCRIPTIONS.get(pfam, 'Unknown')
             print(f"  {pfam} ({desc}): {len(members)} proteins")

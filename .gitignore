@@ -18,3 +18,5 @@ prj3_files/results/*
 uniprot_cache/
 swissprot_db*
 neural_lsh/index*
+prj3_files/**/__pycache__/
+prj3_files/results

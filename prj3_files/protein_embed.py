@@ -4,38 +4,37 @@ import torch
 from pathlib import Path
 from typing import List, Tuple
 import sys
-import struct
 from tqdm import tqdm
 
 from utils.fasta_loader import load_fasta
 from utils.protein_fvecs import save_fvecs, load_fvecs
 
 class ESM2Embedder:
-    
+
     def __init__(self, model_name: str = "esm2_t6_8M_UR50D", device: str = "auto"):
-        
+
         if device == "auto":
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
             self.device = torch.device(device)
-                
+
         try:
             import esm
             model, alphabet = esm.pretrained.load_model_and_alphabet(model_name)
             self.model = model.to(self.device)
             self.alphabet = alphabet
             self.batch_converter = alphabet.get_batch_converter()
-            
+
             self.num_layers = model.num_layers
             self.embed_dim = model.embed_dim
-            
+
             print(f"Model loaded: {self.num_layers} layers, {self.embed_dim} dimensions")
-            
+
         except ImportError:
             print("\n ERROR: ESM library not found.")
             print("Please install: pip install fair-esm")
             sys.exit(1)
-        
+
         # Maximum sequence length: 1024 tokens.
         # 1024 total tokens − 2 special tokens (CLS, EOS) = 1022 residues.
         # Necessary due to the quadratic memory complexity of Attention(O(L^2)).
@@ -49,7 +48,7 @@ class ESM2Embedder:
             print(f"Warning: Truncating sequence of length {len(sequence)} to {self.max_length}")
             return sequence[:self.max_length]  # Truncate to max length
         return sequence
-    
+
     # Βήμα 2: Batching 
     def embed_sequences(
         self, 
@@ -60,9 +59,9 @@ class ESM2Embedder:
 
         all_embeddings = []
         all_ids = []
-        
+
         num_batches = (len(sequences) + batch_size - 1) // batch_size
-        
+
         iterator = range(0, len(sequences), batch_size)
         if show_progress:
             iterator = tqdm(
@@ -74,7 +73,7 @@ class ESM2Embedder:
         # Process in batches
         for i in iterator:
             batch = sequences[i:i + batch_size]
-            
+
             batch_data = []
             batch_ids = []
             batch_lengths = []
@@ -84,70 +83,70 @@ class ESM2Embedder:
                 batch_data.append((protein_id, truncated_seq))
                 batch_ids.append(protein_id)
                 batch_lengths.append(len(truncated_seq))  # Store length for pooling
-            
+
             labels, strs, tokens = self.batch_converter(batch_data)
             tokens = tokens.to(self.device)
 
             # Βήμα 3:Inference
             with torch.no_grad():  # Disable gradient computation for inference
                 results = self.model(tokens, repr_layers=[self.num_layers])  # Run model to get representations
-            
+
             # Βήμα 4: Mean pooling over token embeddings (excluding padding and special tokens)
             token_embeddings = results["representations"][self.num_layers]  # Get embeddings from last layer
-        
+
             batch_embeddings = []
             for seq_idx, seq_len in enumerate(batch_lengths):
                 seq_tokens = token_embeddings[seq_idx, 1:seq_len+1, :]  # Exclude CLS token and padding
                 seq_embedding = seq_tokens.mean(dim=0)  # Average over sequence length
                 batch_embeddings.append(seq_embedding)
-            
+
             batch_embeddings = torch.stack(batch_embeddings)  # Stack into tensor
             batch_embeddings = torch.nn.functional.normalize(batch_embeddings, p=2, dim=1)  # L2 normalize
             embeddings_np = batch_embeddings.cpu().numpy().astype(np.float32)  # Convert to numpy
             all_embeddings.append(embeddings_np)
             all_ids.extend(batch_ids)
-        
+
         final_embeddings = np.vstack(all_embeddings)  # Concatenate all batch embeddings
-        
+
         print(f"\nGenerated embeddings for {len(all_ids)} proteins")
         print(f"Shape: {final_embeddings.shape}")
         print(f"Dtype: {final_embeddings.dtype}")
-        
+
         return final_embeddings, all_ids
-    
+
     def save_embeddings(
         self, 
         embeddings: np.ndarray, 
         ids: List[str], 
-        output_path: str,
+        output_path_str: str,
         save_fvecs_format: bool = True
     ):
-        output_path = Path(output_path)
-        
+        output_path = Path(output_path_str)
+
         # Save embeddings as .npy (Python)
         embeddings_file = output_path.with_suffix('.npy')
         np.save(embeddings_file, embeddings)
         print(f"Saved embeddings to: {embeddings_file}")
-        
+
         # Save embeddings as .fvecs (C++)
         if save_fvecs_format:
             fvecs_file = output_path.with_suffix('.fvecs')
             save_fvecs(str(fvecs_file), embeddings)
-        
+
         # Save IDs as .txt file
         txt_file = output_path.with_suffix('.txt')
         with open(txt_file, 'w') as f:
             for protein_id in ids:
                 f.write(f"{protein_id}\n")
         print(f"Saved protein IDs to: {txt_file}")
-        
+
         # Save IDs as .ids file (backward compatibility)
         ids_file = output_path.with_suffix('.ids')
         with open(ids_file, 'w') as f:
             for protein_id in ids:
                 f.write(f"{protein_id}\n")
         print(f"Saved protein IDs to: {ids_file}")
-        
+
         # Save metadata
         metadata_file = output_path.with_suffix('.meta')
         with open(metadata_file, 'w') as f:
@@ -156,15 +155,15 @@ class ESM2Embedder:
             f.write(f"dtype: {embeddings.dtype}\n")
             f.write(f"model: ESM-2 ({self.num_layers} layers)\n")
         print(f"Saved metadata to: {metadata_file}")
-    
+
     @staticmethod
-    def load_embeddings(input_path: str, prefer_fvecs: bool = False) -> Tuple[np.ndarray, List[str]]:
-        input_path = Path(input_path)
-        
+    def load_embeddings(input_path_str: str, prefer_fvecs: bool = False) -> Tuple[np.ndarray, List[str]]:
+        input_path = Path(input_path_str)
+
         # Try loading from .fvecs first if preferred
         fvecs_file = input_path.with_suffix('.fvecs')
         npy_file = input_path.with_suffix('.npy')
-        
+
         if prefer_fvecs and fvecs_file.exists():
             embeddings = load_fvecs(str(fvecs_file))
             print(f"Loaded embeddings from: {fvecs_file}")
@@ -176,12 +175,12 @@ class ESM2Embedder:
             print(f"Loaded embeddings from: {fvecs_file}")
         else:
             raise FileNotFoundError(f"No embeddings found at {input_path}")
-        
+
         # Load IDs
         ids = None
         txt_file = input_path.with_suffix('.txt')
         ids_file = input_path.with_suffix('.ids')
-        
+
         if txt_file.exists():
             with open(txt_file, 'r') as f:
                 ids = [line.strip() for line in f if line.strip()]
@@ -193,9 +192,9 @@ class ESM2Embedder:
         else:
             print(f"Warning: No ID file found, using indices")
             ids = [f"protein_{i}" for i in range(len(embeddings))]
-        
+
         print(f"Loaded {len(ids)} embeddings, shape: {embeddings.shape}")
-        
+
         return embeddings, ids
 
 
@@ -204,7 +203,7 @@ def main():
         description="Generate protein embeddings using ESM-2",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    
+
     parser.add_argument('-i', '--input', required=True,
                         help='Input FASTA file with protein sequences')
     parser.add_argument('-o', '--output', required=True,
@@ -219,13 +218,13 @@ def main():
                         help='Maximum number of sequences to process (for testing)')
     parser.add_argument('--no-fvecs', action='store_true',
                         help='Skip saving .fvecs format (C++ compatible)')
-    
+
     args = parser.parse_args()
-    
+
     if not Path(args.input).exists():
         print(f" Error: Input file not found: {args.input}")
         sys.exit(1)
-    
+
 
     print("Protein Embedding Generation using ESM-2")
 
@@ -237,19 +236,19 @@ def main():
     print(f"C++ fvecs output: {not args.no_fvecs}")
 
     print()
-    
+
     print("Loading FASTA sequences...")
     sequences = load_fasta(args.input)
-    
+
     if args.max_sequences:
         print(f"Limiting to {args.max_sequences} sequences (testing mode)")
         sequences = sequences[:args.max_sequences]
-    
+
     print(f"Loaded {len(sequences)} sequences")
-    
+
     lengths = [len(seq) for _, seq in sequences]  # Calculate sequence lengths for stats
     print(f"Length stats: min={min(lengths)}, max={max(lengths)}, mean={np.mean(lengths):.1f}")
-    
+
     print("\n Generating embeddings...")
     embedder = ESM2Embedder(model_name=args.model, device=args.device)
     embeddings, ids = embedder.embed_sequences(
@@ -265,7 +264,7 @@ def main():
         args.output,
         save_fvecs_format=not args.no_fvecs
     )
-    
+
 
     print(" Embedding generation complete")
 
