@@ -64,16 +64,16 @@ class UniProtClient:
             return go_terms
         refs = annotation.get('dbReferences') or annotation.get('uniProtKBCrossReferences') or []
 
-        # UniProt JSON format: dbReferences with type="GO"
+        # UniProt JSON format: uniProtKBCrossReferences with database="GO"
         for ref in refs:
-            if ref.get('type') == 'GO':
+            if ref.get('database') == 'GO':
                 go_id = ref.get('id', '')
 
                 # Get properties
-                properties = {prop['type']: prop['value'] 
+                properties = {prop['key']: prop['value'] 
                              for prop in ref.get('properties', [])}
 
-                term = properties.get('term', '')
+                term = properties.get('GoTerm', '')
 
                 # Determine aspect from term prefix
                 if term.startswith('P:'):
@@ -100,16 +100,33 @@ class UniProtClient:
             return ec_numbers
 
         # From protein description
-        protein = annotation.get('protein', {})
+        protein = annotation.get('proteinDescription', {})
         rec_name = protein.get('recommendedName', {})
 
         for ec in rec_name.get('ecNumbers', []):
-            ec_numbers.append(ec.get('value', ''))
+            ec_value = ec.get('value', '')
+            # Get ECO code from evidences
+            evidences = ec.get('evidences', [])
+            eco_code = ''
+            if evidences:
+                eco_code = evidences[0].get('evidenceCode', '')
+            if eco_code:
+                ec_numbers.append(f"{ec_value} ({eco_code})")
+            else:
+                ec_numbers.append(ec_value)
 
         # From alternative names
         for alt_name in protein.get('alternativeNames', []):
             for ec in alt_name.get('ecNumbers', []):
-                ec_numbers.append(ec.get('value', ''))
+                ec_value = ec.get('value', '')
+                evidences = ec.get('evidences', [])
+                eco_code = ''
+                if evidences:
+                    eco_code = evidences[0].get('evidenceCode', '')
+                if eco_code:
+                    ec_numbers.append(f"{ec_value} ({eco_code})")
+                else:
+                    ec_numbers.append(ec_value)
 
         return list(set(ec_numbers))  # Remove duplicates
 
@@ -120,16 +137,16 @@ class UniProtClient:
         if not annotation:
             return pfam_domains
 
-        # UniProt JSON format: dbReferences with type="Pfam"
-        for ref in annotation.get('dbReferences', []):
-            if ref.get('type') == 'Pfam':
+        # UniProt JSON format: uniProtKBCrossReferences with database="Pfam"
+        for ref in annotation.get('uniProtKBCrossReferences', []):
+            if ref.get('database') == 'Pfam':
                 pfam_id = ref.get('id', '')
 
                 # Get properties
-                properties = {prop['type']: prop['value'] 
+                properties = {prop['key']: prop['value'] 
                              for prop in ref.get('properties', [])}
 
-                entry_name = properties.get('entry name', '')
+                entry_name = properties.get('EntryName', '')
 
                 pfam_domains.append((pfam_id, entry_name))
 
@@ -164,7 +181,16 @@ class UniProtClient:
             return None
 
         organism = annotation.get('organism', {})
-        return organism.get('scientificName')
+        scientific_name = organism.get('scientificName', '')
+        evidences = organism.get('evidences', [])
+        eco_code = ''
+        if evidences:
+            eco_code = evidences[0].get('evidenceCode', '')
+        
+        if eco_code:
+            return f"{scientific_name} ({eco_code})"
+        else:
+            return scientific_name
 
     def get_protein_summary(self, protein_id: str) -> Dict:
 
@@ -316,7 +342,7 @@ if __name__ == '__main__':
     print("Testing UniProt API client...\n")
 
     # Test single protein
-    protein_id = "P69905"  # HBA_HUMAN (Hemoglobin alpha)
+    protein_id = "A0A009HN45"  # HBA_HUMAN (Hemoglobin alpha)
     print(f"Fetching {protein_id}...")
     summary = client.get_protein_summary(protein_id)
 
@@ -335,7 +361,7 @@ if __name__ == '__main__':
     print("\n" + "="*70)
     print("Comparing HBA_HUMAN vs HBB_HUMAN...")
 
-    comparison = client.compare_annotations("P69905", "P68871")
+    comparison = client.compare_annotations("Q12KL2", "Q7VJC6")
 
     if comparison['comparable']:
         print(f"\nGO similarity: {comparison['go_similarity']:.2f}")
