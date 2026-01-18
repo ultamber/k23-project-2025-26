@@ -312,9 +312,7 @@ def main():
     args = parse_args()
     np.random.seed(args.seed)
 
-    print("="*70)
-    print("Protein Search with ANN Methods")
-    print("="*70)
+    print("Protein Search with ANN Methods\n")
 
     print(f"\nResolving database...")
 

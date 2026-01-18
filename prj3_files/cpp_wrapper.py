@@ -90,12 +90,7 @@ def parse_cpp_output(output_file: str) -> Dict:
 
 
 def convert_to_ann_results(parsed: Dict) -> List[List[Tuple[int, float]]]:
-    """
-    Convert parsed C++ output to standard ANN results format.
-
-    Standard format: List[List[Tuple[int, float]]] where each inner list
-    contains (neighbor_index, distance) tuples for one query.
-    """
+    # Convert parsed C++ output to standard ANN results format.
     results = []
     for query in parsed['queries']:
         query_results = []
@@ -149,7 +144,6 @@ class CppSearchWrapper:
         return db_path, q_path
 
     def _run_command(self, cmd: List[str], verbose: bool = True) -> Tuple[str, str, float]:
-        """Run a command and return stdout, stderr, and elapsed time."""
         if verbose:
             print(f"  Running: {' '.join(cmd)}")
 

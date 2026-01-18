@@ -33,12 +33,9 @@ def export_for_cpp(
     query_ids: List[str] | None,
     prefix: str = "protein"
 ) -> dict:
-    """
-    Export database and query embeddings to fvecs format for C++ consumption.
-
+    """Export database and query embeddings to fvecs format for C++ consumption.
     Creates .fvecs files for vectors and .txt files for IDs.
-    Returns dict with paths to created files.
-    """
+    Returns dict with paths to created files."""
     output_dir = Path(output_dir_str)
     output_dir.mkdir(parents=True, exist_ok=True)  # Create output directory if needed
 

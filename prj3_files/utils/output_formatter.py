@@ -6,16 +6,9 @@ from utils.pfam_loader import load_pfam_mapping, get_pfam_for_id, get_pfams_for_
 def compute_sequence_identity(seq1: str, seq2: str) -> float:
     """
     Compute sequence identity percentage between two protein sequences using global alignment.
-
     Uses BioPython's PairwiseAligner with global alignment mode to find the best alignment,
     then calculates identity as the percentage of matching residues in the shorter sequence.
     Note: pairwise2.align.globalxx showed that it was deprecated in favor of Align.PairwiseAligner.
-    Arguments:
-        seq1: First protein sequence as string
-        seq2: Second protein sequence as string
-
-    Returns:
-        Identity percentage (0-100), or 0.0 if sequences are empty or no alignment found
     """
     if not seq1 or not seq2:
         return 0.0
@@ -43,15 +36,6 @@ def compute_sequence_identity(seq1: str, seq2: str) -> float:
 def get_sequence_from_list(seq_list, idx):
     """
     Extract sequence string from a sequence list that may have different formats.
-
-    Handles various sequence storage formats: tuples (id, seq), plain strings, etc.
-
-    Arguments:
-        seq_list: List of sequences in various formats
-        idx: Index of the sequence to extract
-
-    Returns:
-        Sequence string, or None if not found or invalid format
     """
     if not seq_list or idx >= len(seq_list):
         return None
@@ -72,17 +56,6 @@ def is_in_blast_top_n(query_idx: int, neighbor_idx: int,
     blast_results: Optional[Dict], N: int) -> Optional[bool]:
     """
     Check if a neighbor is in the top-N BLAST results for a given query.
-
-    Used to mark which ANN results are also found by BLAST ground truth.
-
-    Arguments:
-        query_idx: Index of the query sequence
-        neighbor_idx: Index of the neighbor sequence to check
-        blast_results: Dictionary containing BLAST results with 'blast_results_indices' key
-        N: Number of top results to consider
-
-    Returns:
-        True if neighbor is in top-N BLAST results, False if not, None if no BLAST data
     """
     if not blast_results or 'blast_results_indices' not in blast_results:
         return None
@@ -109,10 +82,6 @@ def format_output_txt(
 ):
     """
     Format protein search results into a comprehensive text report.
-
-    Creates a detailed report showing method comparison, top-N neighbors for each method,
-    sequence identities, Pfam domain information, and biological interpretation comments.
-
     """
     output_path = Path(output_file)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -135,9 +104,8 @@ def format_output_txt(
         print(f"  Query sequences: Not available (identity % will show N/A)")
 
     with open(output_path, 'w') as f:
-        f.write("="*70 + "\n")
+        f.write("\n")
         f.write("Protein Remote Homolog Detection - Results\n")
-        f.write("="*70 + "\n\n")
 
         num_queries = results.get('num_queries', 0)
 
@@ -272,14 +240,14 @@ def format_output_txt(
 
             f.write("\n")
 
-        f.write("="*70 + "\n")
-        f.write("NOTES:\n")
+        f.write("-"*70 + "\n")
+        f.write("Notes:\n")
         f.write("  - BLAST ID (%): Sequence identity percentage\n")
         f.write("  - Remote homologs typically have <30% identity but similar function\n")
         if not database_seqs or not query_seqs:
             f.write("  - Sequence files not loaded: Identity % shows N/A\n")
             f.write("  - To enable: provide .fasta files alongside embeddings\n")
-        f.write("="*70 + "\n\n")
+        f.write("-"*70 + "\n\n")
 
 def generate_pfam_bio_comment(
     query_pfams: List[str],
@@ -289,9 +257,6 @@ def generate_pfam_bio_comment(
 ) -> str:
     """
     Generate biological interpretation comment based on Pfam domains and sequence identity.
-
-    Provides comments about the relationship between query and neighbor proteins
-    based on shared domains, sequence identity levels, and embedding distance.
     """
     if not query_pfams or not neighbor_pfams:
         return "--"
@@ -315,7 +280,6 @@ def generate_pfam_bio_comment(
         return f"Close homolog ({rep})"
 
     # Different-domain hits
-    # (distance threshold is up to you; 3.0 is meaningless if your distances are ~0.1–0.8)
-    if distance < 0.35:  # pick something sensible for your embedding distances
+    if distance < 0.35:  # Threshold for close embedding distance
         return f"No shared domain (closest: {rep}) - FP?"
     return f"No shared domain (closest: {rep})"

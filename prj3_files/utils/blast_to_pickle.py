@@ -70,19 +70,15 @@ def main():
 
     args = parser.parse_args()
 
-    print("="*70)
-    print("Converting BLAST Results to Pickle Format")
-    print("="*70)
+    print("Converting BLAST Results to Pickle Format\n")
 
-    # Load IDs
-    print(f"\n[1] Loading protein IDs...")
+    print(f"\nLoading protein IDs...")
     database_ids = load_ids(args.database_ids)
     query_ids = load_ids(args.query_ids)
     print(f"Database: {len(database_ids)} proteins")
     print(f"Queries: {len(query_ids)} proteins")
 
-    # Parse BLAST results
-    print(f"\n[2] Parsing BLAST results...")
+    print(f"\nParsing BLAST results...")
     results = parse_blast_results(
         args.blast_file,
         database_ids,
@@ -92,15 +88,11 @@ def main():
     print(f"Found {len(results['blast_results_ids'])} queries with hits")
     print(f"Converted {len(results['blast_results_indices'])} to indices")
 
-    # Save to pickle
-    print(f"\n[3] Saving to {args.output}...")
+    print(f"\nSaving to {args.output}...")
     with open(args.output, 'wb') as f:
         pickle.dump(results, f)
-    print(f"Saved!")
+    print(f"Saved\n")
 
-    print("\n" + "="*70)
-    print("Done!")
-    print("="*70)
     print(f"\nNow run:")
     print(f"  python protein_search.py \\")
     print(f"  -d output.npy \\")

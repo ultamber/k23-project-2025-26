@@ -6,7 +6,7 @@ import json
 import pickle
 import time
 
-from utils.uniprot_client import UniProtClient, _extract_uniprot_acc, _format_go_terms, get_uniprot_summary_cached
+from utils.uniprot_client import UniProtClient, _extract_uniprot_acc, get_uniprot_summary_cached
 from utils.pfam_loader import _get_pfams_for_id
 
 def write_method_results(
@@ -403,7 +403,7 @@ def write_method_results(
 
                 dists = [float(d) for _, d in results[q_idx]] if results[q_idx] else [0.0]
 
-                # Fix: Handle None recall properly
+                #Handle None recall properly
                 recall_str = f"{q_recall:.4f}" if q_recall is not None else "N/A"
 
                 f.write(f"{q_idx},{q_id},{q_time:.6f},{q_time*1000:.4f},{q_qps:.2f},")
@@ -436,49 +436,6 @@ def _get_blast_identity(
                     return None  # In BLAST but no pident
 
     return None
-
-def _get_pfam_for_id(protein_id: str, pfam_mapping: Dict) -> Optional[str]:
-    if protein_id in pfam_mapping:
-        return pfam_mapping[protein_id].get('pfam')
-
-    if '|' in protein_id:
-        parts = protein_id.split('|')
-        if len(parts) >= 2:
-            accession = parts[1]  # Extract accession from UniProt format
-            if accession in pfam_mapping:
-                return pfam_mapping[accession].get('pfam')
-
-    return None
-
-
-def _get_sequence(seqs, idx):
-    if not seqs or idx >= len(seqs):
-        return None
-
-    seq = seqs[idx]
-    if isinstance(seq, tuple):
-        return seq[1] if len(seq) > 1 else seq[0]
-    return seq
-
-
-def _generate_comment(query_pfam, neighbor_pfam, distance, in_blast_top_n):
-    if query_pfam is None or neighbor_pfam is None:
-        return "--"
-
-    same_family = query_pfam == neighbor_pfam
-
-    if same_family:
-        if in_blast_top_n is False:
-            return f"Remote homolog? ({query_pfam})"
-        elif in_blast_top_n is True:
-            return f"Same family ({query_pfam})"
-        else:
-            return f"Same family ({query_pfam})"
-    else:
-        if distance < 5.0:
-            return f"Different family ({neighbor_pfam})"
-        return "--"
-
 
 def write_comparison_summary(
     output_dir: str,

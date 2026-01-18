@@ -269,18 +269,6 @@ def _extract_uniprot_acc(pid: str) -> str:
             return parts[1]
     return token
 
-def _format_go_terms(go_terms, max_terms: int = 3) -> str:
-    if not go_terms:
-        return "GO: N/A"
-    # Prioritize Function, then Process, then Component
-    order = {"F": 0, "P": 1, "C": 2, "Unknown": 3}
-    go_terms = sorted(go_terms, key=lambda x: order.get(x[1], 9))
-    short = []
-    for go_id, aspect, term in go_terms[:max_terms]:
-        prefix = aspect if aspect in ("F", "P", "C") else "?"
-        short.append(f"{prefix}:{term}")
-    return "GO: " + "; ".join(short)
-
 def get_uniprot_summary_cached(
     neighbour_acc: str,
     query_acc: str,
@@ -289,9 +277,6 @@ def get_uniprot_summary_cached(
     state: Dict[str, float],
     delay: float = 0.2,
 ) -> Optional[Dict]:
-    """
-    state should contain: {"last_call": 0.0}
-    """
     if not uniprot_client or not neighbour_acc or not query_acc:
         return None
 
@@ -337,7 +322,7 @@ def batch_fetch_annotations(
 if __name__ == '__main__':
     """Test UniProt client."""
 
-    # Test with hemoglobin proteins
+    # Test
     client = UniProtClient(cache_dir='uniprot_cache')
 
     print("Testing UniProt API client...\n")
@@ -359,9 +344,6 @@ if __name__ == '__main__':
             print(f"- {pfam_id}: {desc}")
 
     # Test comparison
-    print("\n" + "="*70)
-    print("Comparing HBA_HUMAN vs HBB_HUMAN...")
-
     comparison = client.compare_annotations("A0A009HPM0", "Q8DXM9")
 
     if comparison['comparable']:
@@ -372,4 +354,4 @@ if __name__ == '__main__':
         print(f"Common Pfam domains: {len(comparison['pfam_common'])}")
         print(f"Has common function: {comparison['has_common_function']}")
 
-    print("\nTest complete!")
+    print("\nTest complete")

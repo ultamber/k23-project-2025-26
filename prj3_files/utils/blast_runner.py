@@ -7,15 +7,6 @@ import pickle
 
 
 def get_accession(protein_id: str) -> str:
-    """
-    Extract accession from various protein ID formats.
-
-    Handles:
-    - sp|Q5F928|UVRC_NEIG1 -> Q5F928
-    - tr|A0A009I3Y5|A0A009I3Y5_ACIBA -> A0A009I3Y5
-    - Q5F928 -> Q5F928
-    - A0A009I3Y5 ACIBA -> A0A009I3Y5
-    """
     protein_id = protein_id.strip()
 
     # UniProt format: sp|ACCESSION|ENTRY_NAME or tr|ACCESSION|ENTRY_NAME
@@ -303,17 +294,6 @@ def run_blast_and_convert(
     threads: int = 8,
     verbose: bool = True
 ) -> Dict:
-    """
-    Complete BLAST workflow: search and convert to indices.
-
-    This is the function to call from protein_search.py.
-
-    Returns:
-        Dict with:
-        - 'blast_results_ids': Original ID-based results
-        - 'blast_results_indices': Index-based results for recall calculation
-        - 'params': Search parameters
-    """
 
     # Build comprehensive ID mappings
     if verbose:
@@ -393,9 +373,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    print("="*70)
-    print("BLAST Runner (Fixed)")
-    print("="*70)
+    print("BLAST Runner\n")
 
     # Load ID mappings
     database_ids = None

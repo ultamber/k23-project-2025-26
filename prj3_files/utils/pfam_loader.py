@@ -14,12 +14,7 @@ PFAM_DESCRIPTIONS = {
 
 
 def load_pfam_mapping(filepath: str) -> Dict[str, dict]:
-    """
-    Load Pfam domain mapping from a tab-separated file.
-
-    Expected file format: accession<TAB>length<TAB>pfam1;pfam2;...
-    Creates a mapping from protein accessions to their Pfam domains and metadata.
-    """
+    """Load Pfam domain mapping from a tab-separated file."""
     mapping = {}
     with open(filepath, "r", encoding="utf-8") as f:
         header = f.readline().strip()
@@ -77,10 +72,7 @@ def get_pfams_for_id(protein_id: str, pfam_mapping: Dict[str, dict]) -> List[str
     return lookup(token)
 
 def _get_pfams_for_id(protein_id: str, pfam_mapping: Dict) -> List[str]:
-    """
-    Helper function to get Pfam domains for a protein ID (internal use).
-    Similar to get_pfams_for_id but with different fallback logic.
-    """
+    """Helper function to get Pfam domains for a protein ID (internal use)."""
     def lookup(key: str) -> List[str]:
         if key in pfam_mapping:
             pfams = pfam_mapping[key].get("pfams")
@@ -109,19 +101,9 @@ def _get_pfams_for_id(protein_id: str, pfam_mapping: Dict) -> List[str]:
     # plain accession
     return lookup(token) or []
 
-def _get_pfam_for_id(protein_id: str, pfam_mapping: Dict) -> Optional[str]:
-    """
-    Helper function to get the primary Pfam domain for a protein ID (internal use).
-    Returns the first Pfam domain from the list, or None if no domains found.
-    """
-    pfams = _get_pfams_for_id(protein_id, pfam_mapping)
-    return pfams[0] if pfams else None
-
 def get_pfam_for_id(protein_id: str, pfam_mapping: Dict[str, dict]) -> Optional[str]:
-    """
-    Get the primary Pfam domain for a protein ID.
-    Returns the first Pfam domain associated with the protein, handling various ID formats.
-    """
+    """Get the primary Pfam domain for a protein ID.
+    Returns the first Pfam domain associated with the protein, handling various ID formats."""
     if protein_id in pfam_mapping:
         return pfam_mapping[protein_id]['pfam']
 
@@ -145,10 +127,8 @@ def get_pfam_for_id(protein_id: str, pfam_mapping: Dict[str, dict]) -> Optional[
     return None
 
 def check_same_family(query_id: str, neighbor_id: str, pfam_mapping: Dict[str, dict]):
-    """
-    Check if two proteins belong to the same Pfam domain family.
-    Determines if query and neighbor proteins share any Pfam domains.
-    """
+    """Check if two proteins belong to the same Pfam domain family.
+    Determines if query and neighbor proteins share any Pfam domains."""
     q = set(get_pfams_for_id(query_id, pfam_mapping))
     n = set(get_pfams_for_id(neighbor_id, pfam_mapping))
 
@@ -160,10 +140,7 @@ def check_same_family(query_id: str, neighbor_id: str, pfam_mapping: Dict[str, d
 
 
 def get_family_members(pfam_id: str, pfam_mapping: Dict[str, dict]) -> List[str]:
-    """
-    Get all proteins that contain a specific Pfam domain.
-    Finds all protein accessions that have the given Pfam domain.
-    """
+    """Get all proteins that contain a specific Pfam domain."""
     out = []
     for acc, data in pfam_mapping.items():
         pfams = data.get("pfams", []) or []
@@ -173,11 +150,9 @@ def get_family_members(pfam_id: str, pfam_mapping: Dict[str, dict]) -> List[str]
 
 
 def analyze_pfam_coverage(query_ids: List[str], database_ids: List[str], pfam_mapping: Dict[str, dict]) -> Dict:
-    """
-    Analyze Pfam domain coverage across query and database sets.
+    """Analyze Pfam domain coverage across query and database sets.
     Computes statistics about which Pfam families are present in queries vs database,
-    and identifies overlapping families.
-    """
+    and identifies overlapping families."""
     query_pfams: Dict[str, List[str]] = {}
     for qid in query_ids:
         for pf in get_pfams_for_id(qid, pfam_mapping):

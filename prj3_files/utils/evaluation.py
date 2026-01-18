@@ -10,7 +10,6 @@ def compute_recall(
 ) -> float:
     """
     Compute recall@N for a single query.
-
     Recall@N = |ANN_top_N ∩ BLAST_top_N| / |BLAST_top_N|
     """
     ann_top_n = set(ann_results[:N])  # Top N results from ANN method
@@ -30,9 +29,7 @@ def compute_average_recall(
     all_ground_truth: List[List[int]],
     N: int
 ) -> float:
-    """
-    Compute average recall@N across multiple queries.
-    """
+    """Compute average recall@N across multiple queries."""
     recalls = []
 
     for ann_res, blast_res in zip(all_ann_results, all_ground_truth):
@@ -58,10 +55,7 @@ def compute_precision_at_k(
     k: int
 ) -> float:
     """
-    Compute precision@k for a single query.
-
-    Precision@k = |retrieved_top_k ∩ relevant| / k
-    """
+    Compute precision@k for a single query. Precision@k = |retrieved_top_k ∩ relevant| / k"""
     retrieved_at_k = set(retrieved[:k])  # Top k retrieved items
     relevant_retrieved = retrieved_at_k & relevant  # Relevant items in top k
 
@@ -74,7 +68,6 @@ def compute_map(
 ) -> float:
     """
     Compute Mean Average Precision (MAP) across multiple queries.
-
     For each query:
     - AP = average of precision@i for each relevant item at position i
     - MAP = mean of AP across all queries
@@ -118,8 +111,8 @@ class PerformanceTracker:
         # Per-query tracking
         self.per_query_times = {}  # method -> list of query times
         self.query_start = None
-        self.query_times = []  # Legacy, not used in current implementation
-        self.ann_results = []   # Legacy
+        self.query_times = []
+        self.ann_results = []
 
     def start_build(self, method_name: str = None):
         self.current_method = method_name
@@ -190,19 +183,12 @@ class PerformanceTracker:
         return self.per_query_times.get(method_name, [])
 
     def get_per_query_qps(self, method_name: str) -> List[float]:
-        """
-        Get per-query QPS values (1/time for each query).
-        """
         times = self.per_query_times.get(method_name, [])
         return [1.0 / t if t > 0 else 0.0 for t in times]
 
     def get_metrics(self, N: int = 50) -> Dict:
-        """
-        Compute comprehensive metrics including recall, QPS, and timing statistics.
-        Note: This method uses legacy attributes (query_times, ann_results, ground_truth)
-        that may not be populated in the current implementation.
-        """
-        num_queries = len(self.query_times)  # Note: uses legacy query_times
+        """Compute comprehensive metrics including recall, QPS, and timing statistics."""
+        num_queries = len(self.query_times)
 
         if num_queries == 0:
             return {
@@ -214,8 +200,8 @@ class PerformanceTracker:
             }
 
         recall = compute_average_recall(
-            self.ann_results,  # Legacy: list of ANN result lists
-            self.ground_truth,  # Legacy: list of ground truth lists
+            self.ann_results,
+            self.ground_truth,
             N
         )
 
@@ -305,12 +291,6 @@ def compute_recall_at_n(
 ) -> float:
     """
     Compute average recall@N across queries using BLAST ground truth.
-
-    This is a more sophisticated recall calculation that handles:
-    - Variable number of ground truth results per query
-    - ANN results may have fewer than N neighbors
-    - Ensures denominator is |BLAST_top_N ∩ unique_indices|
-
     For each query q:
     - Get BLAST_top_N = first N BLAST results (may have duplicates if BLAST returns multiples)
     - Take unique indices: S_BLAST = set of unique neighbor indices in BLAST_top_N
@@ -318,7 +298,6 @@ def compute_recall_at_n(
     - Get ANN_top_k where k = min(n_eff, len(ANN_results[q]))
     - S_ANN = set of indices in ANN_top_k
     - recall_q = |S_BLAST ∩ S_ANN| / n_eff
-
     Returns average recall across all queries with ground truth.
     """
     total = 0.0  # Sum of recall values
