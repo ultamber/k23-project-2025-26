@@ -99,11 +99,6 @@ def parse_args():
         help='Export embeddings to directory in .fvecs format for C++ search'
     )
     parser.add_argument(
-        '--use-cpp',
-        action='store_true',
-        help='Use C++ implementations instead of Python'
-    )
-    parser.add_argument(
         '--cpp-binary',
         default='../bin/search',
         help='Path to C++ search binary (default: ../bin/search)'
@@ -116,6 +111,12 @@ def parse_args():
     parser.add_argument(
         '--export-fvecs',
         help='Export embeddings to .fvecs format at this directory (for C++ use)'
+    )
+    parser.add_argument(
+        '--display-n',
+        type=int,
+        default=10,
+        help='Number of top results to display/save per query (default: 10)'
     )
     # LSH
     parser.add_argument('--lsh-L', type=int, default=50, help='LSH: number of hash tables')
@@ -701,7 +702,7 @@ def main():
             database_seqs=database_seqs,
             per_query_times=tracker.get_per_query_times(method_name),
             N=args.N,
-            display_n=10,
+            display_n=args.display_n,
             save_raw_data=True,
             output_file=output_file.as_posix(),
             uniprot_client=uniprot_client,
