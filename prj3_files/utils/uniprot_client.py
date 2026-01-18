@@ -362,12 +362,13 @@ if __name__ == '__main__':
     print("\n" + "="*70)
     print("Comparing HBA_HUMAN vs HBB_HUMAN...")
 
-    comparison = client.compare_annotations("Q12KL2", "Q7VJC6")
+    comparison = client.compare_annotations("A0A009HPM0", "Q8DXM9")
 
     if comparison['comparable']:
         print(f"\nGO similarity: {comparison['go_similarity']:.2f}")
         print(f"Pfam similarity: {comparison['pfam_similarity']:.2f}")
         print(f"Common GO terms: {len(comparison['go_common'])}")
+        print(f"common go terms: {comparison['go_common']}")
         print(f"Common Pfam domains: {len(comparison['pfam_common'])}")
         print(f"Has common function: {comparison['has_common_function']}")
 

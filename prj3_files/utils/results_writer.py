@@ -312,17 +312,13 @@ def write_method_results(
                     query_acc = _extract_uniprot_acc(q_id)
                     comparison = uniprot_client.compare_annotations(
                         query_acc,
-                        neighbour_acc,
-                        uniprot_client,
-                        uniprot_cache_summary,
-                        uniprot_state,
-                        delay=uniprot_delay
+                        neighbour_acc
                     )
                     # s = get_uniprot_summary_cached(neighbour_acc, query_acc, uniprot_client, uniprot_cache_summary, uniprot_state, delay=0.2)
                     # if s and s.get("found"):
                     #     go_suffix = _format_go_terms(s.get("go_terms", []), max_terms=3)
                     if comparison['comparable']:
-                        go_suffix = comparison['has_common_function'] if comparison['has_common_function'] else "GO: None"
+                        go_suffix = comparison['go_common'] if comparison['go_common'] else "GO: None"
                 comment = f"{comment_core} | {go_suffix}" if comment_core != "--" else go_suffix
                 # Write row
                 f.write(f"{rank:<6} | {display_neighbor_id:<25} | {distance:<10.4f} | {blast_id_str:<12} | {in_blast:<12} |")
