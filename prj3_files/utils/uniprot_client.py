@@ -282,7 +282,8 @@ def _format_go_terms(go_terms, max_terms: int = 3) -> str:
     return "GO: " + "; ".join(short)
 
 def get_uniprot_summary_cached(
-    acc: str,
+    neighbour_acc: str,
+    query_acc: str,
     uniprot_client,  # type: UniProtClient
     cache: Dict[str, Dict],
     state: Dict[str, float],
@@ -291,11 +292,11 @@ def get_uniprot_summary_cached(
     """
     state should contain: {"last_call": 0.0}
     """
-    if not uniprot_client or not acc:
+    if not uniprot_client or not neighbour_acc or not query_acc:
         return None
 
-    if acc in cache:
-        return cache[acc]
+    if neighbour_acc in cache:
+        return cache[neighbour_acc]
 
     # rate limit
     last_call = state.get("last_call", 0.0)
@@ -306,8 +307,8 @@ def get_uniprot_summary_cached(
             time.sleep(sleep_for)
         state["last_call"] = time.time()
 
-    summary = uniprot_client.get_protein_summary(acc)
-    cache[acc] = summary
+    summary = uniprot_client.get_protein_summary(neighbour_acc)
+    cache[neighbour_acc] = summary
     return summary
 
 def batch_fetch_annotations(
