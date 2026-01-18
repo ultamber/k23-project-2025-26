@@ -319,7 +319,7 @@ def write_method_results(
                     #     go_suffix = _format_go_terms(s.get("go_terms", []), max_terms=3)
                     if comparison['comparable']:
                         go_suffix = comparison['go_common'] if comparison['go_common'] else "GO: None"
-                comment = f"{comment_core} | {go_suffix}" if comment_core != "--" else go_suffix
+                comment = f"{comment_core} | {go_suffix}"
                 # Write row
                 f.write(f"{rank:<6} | {display_neighbor_id:<25} | {distance:<10.4f} | {blast_id_str:<12} | {in_blast:<12} |")
                 if pfam_mapping:
@@ -543,7 +543,7 @@ def _generate_comment_with_identity(
     if not query_pfams or not neighbor_pfams:
         if blast_identity is not None and blast_identity < 30:
             return "Low identity (<30%)"
-        return "--"
+        return "No pfam info"
 
     qset = set(query_pfams)
     nset = set(neighbor_pfams)
