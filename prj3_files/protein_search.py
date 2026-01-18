@@ -428,7 +428,7 @@ def main():
 
     if args.export_cpp:
         export_for_cpp(
-            output_dir=args.export_cpp,
+            output_dir_str=args.export_cpp,
             database_embeddings=database_embeddings,
             database_ids=database_ids,
             query_embeddings=query_embeddings,
@@ -587,7 +587,7 @@ def main():
                     queries=query_embeddings,
                     T=args.nlsh_T,
                     N=args.N,
-                    
+
                 )
 
             # Store results

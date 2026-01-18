@@ -1,12 +1,10 @@
 import subprocess
 import tempfile
 import os
-import struct
 import numpy as np
 from pathlib import Path
 from typing import List, Tuple, Dict, Optional
 import time
-import re
 from utils.protein_fvecs import save_fvecs, load_fvecs
 
 def parse_cpp_output(output_file: str) -> Dict:
@@ -16,22 +14,22 @@ def parse_cpp_output(output_file: str) -> Dict:
         'queries': [],
         'summary': {}
     }
-    
+
     current_query = None
     in_r_neighbors = False  # Flag for R-near neighbors section
-    
+
     with open(output_file, 'r') as f:
         for line in f:
             line = line.strip()
             if not line:
                 in_r_neighbors = False
                 continue
-            
+
             # First non-empty line that's not a query is the method name
             if results['method'] is None and not line.startswith('Query'):
                 results['method'] = line
                 continue
-            
+
             # Start of new query section
             if line.startswith('Query:'):
                 if current_query is not None:
@@ -45,32 +43,32 @@ def parse_cpp_output(output_file: str) -> Dict:
                 }
                 in_r_neighbors = False
                 continue
-            
+
             # Parse neighbor indices
             if line.startswith('Nearest neighbor-'):
                 idx = int(line.split(':')[1].strip())
                 current_query['neighbors'].append(idx)
                 continue
-            
+
             # Parse approximate distances
             if line.startswith('distanceApproximate:'):
                 current_query['distances_approx'].append(float(line.split(':')[1].strip()))
                 continue
-            
+
             # Parse true distances
             if line.startswith('distanceTrue:'):
                 current_query['distances_true'].append(float(line.split(':')[1].strip()))
                 continue
-            
+
             # R-near neighbors section (for range search)
             if line.startswith('R-near neighbors:'):
                 in_r_neighbors = True
                 continue
-            
+
             if in_r_neighbors and line.isdigit():
                 current_query['r_neighbors'].append(int(line))
                 continue
-            
+
             # Summary statistics section
             if line.startswith('Average AF:'):
                 results['summary']['avg_af'] = float(line.split(':')[1].strip())
@@ -84,17 +82,17 @@ def parse_cpp_output(output_file: str) -> Dict:
                 results['summary']['avg_time_true'] = float(line.split(':')[1].strip())
             elif line.startswith('Silhouette Score:'):
                 results['summary']['silhouette'] = float(line.split(':')[1].strip())
-    
+
     if current_query is not None:
         results['queries'].append(current_query)
-    
+
     return results
 
 
 def convert_to_ann_results(parsed: Dict) -> List[List[Tuple[int, float]]]:
     """
     Convert parsed C++ output to standard ANN results format.
-    
+
     Standard format: List[List[Tuple[int, float]]] where each inner list
     contains (neighbor_index, distance) tuples for one query.
     """
@@ -122,10 +120,10 @@ class CppSearchWrapper:
         self.nlsh_script = nlsh_script
         self.dataset_type = dataset_type
         self.temp_dir = temp_dir or tempfile.mkdtemp(prefix='cpp_search_')
-        
+
         # Ensure temp directory exists
         Path(self.temp_dir).mkdir(parents=True, exist_ok=True)
-    
+
     def _prepare_data(
         self,
         database: np.ndarray,
@@ -140,32 +138,32 @@ class CppSearchWrapper:
             save_fvecs(db_path, database)
         else:
             db_path = database
-        
+
         # Queries
         if isinstance(queries, np.ndarray):
             q_path = query_file or os.path.join(self.temp_dir, 'queries.fvecs')
             save_fvecs(q_path, queries)
         else:
             q_path = queries
-        
+
         return db_path, q_path
-    
+
     def _run_command(self, cmd: List[str], verbose: bool = True) -> Tuple[str, str, float]:
         """Run a command and return stdout, stderr, and elapsed time."""
         if verbose:
             print(f"  Running: {' '.join(cmd)}")
-        
+
         start = time.time()
         result = subprocess.run(cmd, capture_output=True, text=True)
         elapsed = time.time() - start
-        
+
         if result.returncode != 0:
             print(f"  ERROR: Command failed with code {result.returncode}")
             print(f"  stderr: {result.stderr}")
             raise RuntimeError(f"C++ search failed: {result.stderr}")
-        
+
         return result.stdout, result.stderr, elapsed
-    
+
     def search_lsh(
         self,
         database,
@@ -174,7 +172,7 @@ class CppSearchWrapper:
         k: int = 4,
         w: float = 1.0,
         N: int = 50,
-        R: float = None,
+        R: float | None = None,
         range_search: bool = False,
         output_file: Optional[str] = None,
         ground_truth_file: Optional[str] = None,
@@ -183,7 +181,7 @@ class CppSearchWrapper:
 
         db_path, q_path = self._prepare_data(database, queries)
         output_file = output_file or os.path.join(self.temp_dir, 'lsh_results.txt')
-        
+
         # Build command line arguments for C++ binary
         cmd = [
             self.binary_path,
@@ -197,20 +195,20 @@ class CppSearchWrapper:
             '-w', str(w),
             '-N', str(N)
         ]
-        
+
         # Optional range search parameters
         if range_search and R is not None:
             cmd.extend(['-R', str(R), '-range', 'true'])
-        
+
         # Optional ground truth for evaluation
         if ground_truth_file:
             cmd.extend(['-gt', ground_truth_file])
-        
+
         # Execute command and parse results
         stdout, stderr, elapsed = self._run_command(cmd, verbose)
         parsed = parse_cpp_output(output_file)
         results = convert_to_ann_results(parsed)
-        
+
         return {
             'results': results,
             'summary': parsed['summary'],
@@ -219,7 +217,7 @@ class CppSearchWrapper:
             'elapsed': elapsed,
             'output_file': output_file
         }
-    
+
     def search_hypercube(
         self,
         database,
@@ -229,7 +227,7 @@ class CppSearchWrapper:
         probes: int = 100,
         w: float = 1.5,
         N: int = 50,
-        R: float = None,
+        R: float | None = None,
         range_search: bool = False,
         output_file: Optional[str] = None,
         ground_truth_file: Optional[str] = None,
@@ -238,7 +236,7 @@ class CppSearchWrapper:
 
         db_path, q_path = self._prepare_data(database, queries)
         output_file = output_file or os.path.join(self.temp_dir, 'hypercube_results.txt')
-        
+
         cmd = [
             self.binary_path,
             '-d', db_path,
@@ -252,17 +250,17 @@ class CppSearchWrapper:
             '-w', str(w),
             '-N', str(N)
         ]
-        
+
         if range_search and R is not None:
             cmd.extend(['-R', str(R), '-range', 'true'])
-        
+
         if ground_truth_file:
             cmd.extend(['-gt', ground_truth_file])
-        
+
         stdout, stderr, elapsed = self._run_command(cmd, verbose)
         parsed = parse_cpp_output(output_file)
         results = convert_to_ann_results(parsed)
-        
+
         return {
             'results': results,
             'summary': parsed['summary'],
@@ -271,7 +269,7 @@ class CppSearchWrapper:
             'elapsed': elapsed,
             'output_file': output_file
         }
-    
+
     def search_ivfflat(
         self,
         database,
@@ -279,7 +277,7 @@ class CppSearchWrapper:
         kclusters: int = 100,
         nprobe: int = 10,
         N: int = 50,
-        R: float = None,
+        R: float | None = None,
         range_search: bool = False,
         output_file: Optional[str] = None,
         ground_truth_file: Optional[str] = None,
@@ -288,7 +286,7 @@ class CppSearchWrapper:
 
         db_path, q_path = self._prepare_data(database, queries)
         output_file = output_file or os.path.join(self.temp_dir, 'ivfflat_results.txt')
-        
+
         cmd = [
             self.binary_path,
             '-d', db_path,
@@ -300,17 +298,17 @@ class CppSearchWrapper:
             '-nprobe', str(nprobe),
             '-N', str(N)
         ]
-        
+
         if range_search and R is not None:
             cmd.extend(['-R', str(R), '-range', 'true'])
-        
+
         if ground_truth_file:
             cmd.extend(['-gt', ground_truth_file])
-        
+
         stdout, stderr, elapsed = self._run_command(cmd, verbose)
         parsed = parse_cpp_output(output_file)
         results = convert_to_ann_results(parsed)
-        
+
         return {
             'results': results,
             'summary': parsed['summary'],
@@ -319,7 +317,7 @@ class CppSearchWrapper:
             'elapsed': elapsed,
             'output_file': output_file
         }
-    
+
     def search_ivfpq(
         self,
         database,
@@ -329,7 +327,7 @@ class CppSearchWrapper:
         Msub: int = 8,
         nbits: int = 8,
         N: int = 50,
-        R: float = None,
+        R: float | None = None,
         range_search: bool = False,
         output_file: Optional[str] = None,
         ground_truth_file: Optional[str] = None,
@@ -337,7 +335,7 @@ class CppSearchWrapper:
     ) -> Dict:
         db_path, q_path = self._prepare_data(database, queries)
         output_file = output_file or os.path.join(self.temp_dir, 'ivfpq_results.txt')
-        
+
         cmd = [
             self.binary_path,
             '-d', db_path,
@@ -351,17 +349,17 @@ class CppSearchWrapper:
             '-nbits', str(nbits),
             '-N', str(N)
         ]
-        
+
         if range_search and R is not None:
             cmd.extend(['-R', str(R), '-range', 'true'])
-        
+
         if ground_truth_file:
             cmd.extend(['-gt', ground_truth_file])
-        
+
         stdout, stderr, elapsed = self._run_command(cmd, verbose)
         parsed = parse_cpp_output(output_file)
         results = convert_to_ann_results(parsed)
-        
+
         return {
             'results': results,
             'summary': parsed['summary'],
@@ -370,7 +368,7 @@ class CppSearchWrapper:
             'elapsed': elapsed,
             'output_file': output_file
         }
-    
+
     def search_neural_lsh(
         self,
         database,
@@ -412,7 +410,7 @@ class CppSearchWrapper:
         stdout, stderr, elapsed = self._run_command(cmd, verbose)
         parsed = parse_cpp_output(output_file)
         results = convert_to_ann_results(parsed)
-        
+
         return {
             'results': results,
             'summary': parsed['summary'],
@@ -421,7 +419,7 @@ class CppSearchWrapper:
             'elapsed': elapsed,
             'output_file': output_file
         }
-    
+
     def search(
         self,
         method: str,
@@ -433,7 +431,7 @@ class CppSearchWrapper:
     ) -> Dict:
 
         method = method.lower().replace('_', '-')
-        
+
         if method == 'lsh':
             return self.search_lsh(database, queries, N=N, verbose=verbose, **kwargs)
         elif method == 'hypercube':
@@ -446,7 +444,7 @@ class CppSearchWrapper:
             return self.search_neural_lsh(database, queries, N=N, verbose=verbose, **kwargs)
         else:
             raise ValueError(f"Unknown method: {method}")
-    
+
     def cleanup(self):
         import shutil
         if self.temp_dir and os.path.exists(self.temp_dir):
@@ -463,7 +461,7 @@ def run_cpp_method(
 ) -> Tuple[List[List[Tuple[int, float]]], Dict]:
 
     wrapper = CppSearchWrapper(binary_path=binary_path, dataset_type='sift')
-    
+
     try:
         if method == 'lsh':
             result = wrapper.search_lsh(
@@ -508,7 +506,7 @@ def run_cpp_method(
             )
         else:
             raise ValueError(f"Unknown method: {method}")
-        
+
         # Convert C++ results to the metrics format expected by protein_search.py
         metrics = {
             'build_time': 0,  # C++ build time included in search time
@@ -516,15 +514,15 @@ def run_cpp_method(
             'qps': len(query_embeddings) / result['elapsed'] if result['elapsed'] > 0 else 0,
             **result['summary']  # Include parsed summary statistics
         }
-        
+
         return result['results'], metrics
-    
+
     finally:
         wrapper.cleanup()
 
 if __name__ == "__main__":
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="Test C++ search wrapper")
     parser.add_argument('-d', '--database', required=True, help='Database .fvecs file')
     parser.add_argument('-q', '--queries', required=True, help='Query .fvecs file')
@@ -532,35 +530,35 @@ if __name__ == "__main__":
                         choices=['lsh', 'hypercube', 'ivfflat', 'ivfpq'])
     parser.add_argument('-b', '--binary', default='../bin/search', help='C++ binary path')
     parser.add_argument('-N', type=int, default=50, help='Number of neighbors')
-    
+
     args = parser.parse_args()
-    
+
     # Load data from fvecs files
     print(f"Loading database from {args.database}")
     database = load_fvecs(args.database)
     print(f"Database shape: {database.shape}")
-    
+
     print(f"Loading queries from {args.queries}")
     queries = load_fvecs(args.queries)
     print(f"Queries shape: {queries.shape}")
-    
+
     # Run search using the wrapper
     wrapper = CppSearchWrapper(binary_path=args.binary)
-    
+
     result = wrapper.search(
         method=args.method,
         database=database,
         queries=queries,
         N=args.N
     )
-    
+
     print(f"\nResults:")
     print(f"  Method: {result['method']}")
     print(f"  Elapsed: {result['elapsed']:.3f}s")
     print(f"  Summary: {result['summary']}")
     print(f"  Num queries: {len(result['results'])}")
-    
+
     if result['results']:
         print(f"\n  First query neighbors: {result['results'][0][:5]}")
-    
+
     wrapper.cleanup()

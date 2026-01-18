@@ -29,14 +29,16 @@ def write_method_results(
     uniprot_client: Optional[UniProtClient] = None,
     uniprot_delay: float = 0.0
 ):
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir_path = Path(output_dir)
+    output_dir_path.mkdir(parents=True, exist_ok=True)
 
     method_slug = method_name.lower().replace(' ', '_').replace('-', '_')
 
     # Create output filename
     if output_file is None:
-        output_file = output_dir / f"{method_slug}_results.txt"
+        output_file_path = output_dir_path / f"{method_slug}_results.txt"
+    else:
+        output_file_path = Path(output_file)
 
     # Extract metrics
     build_time = metrics.get('build_time', 0.0)
@@ -77,7 +79,7 @@ def write_method_results(
     if per_query_times:
         per_query_qps = [1.0 / t if t > 0 else 0.0 for t in per_query_times]  # QPS = 1 / time
 
-    with open(output_file, 'w', encoding='utf-8') as f:
+    with open(output_file_path, 'w', encoding='utf-8') as f:
         f.write("=" * 90 + "\n")
         f.write(f"METHOD: {method_name.upper()}\n")
         f.write("=" * 90 + "\n")
@@ -335,7 +337,7 @@ def write_method_results(
     print(f"Saved {method_name} results to: {output_file}")
 
     if save_raw_data:
-        raw_data_dir = output_dir / "raw_data"
+        raw_data_dir = output_dir_path / "raw_data"
         raw_data_dir.mkdir(parents=True, exist_ok=True)
 
         raw_data = {
@@ -483,8 +485,8 @@ def write_comparison_summary(
     all_metrics: Dict[str, Dict],
     N: int = 50
 ):
-    output_dir = Path(output_dir)
-    output_file = output_dir / "comparison_summary.txt"
+    output_dir_path = Path(output_dir)
+    output_file = output_dir_path / "comparison_summary.txt"
 
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write("=" * 100 + "\n")

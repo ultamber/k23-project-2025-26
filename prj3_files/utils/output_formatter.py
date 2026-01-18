@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional
 from Bio import Align
 from utils.pfam_loader import load_pfam_mapping, get_pfam_for_id, get_pfams_for_id, PFAM_DESCRIPTIONS
 
@@ -10,7 +10,7 @@ def compute_sequence_identity(seq1: str, seq2: str) -> float:
     Uses BioPython's PairwiseAligner with global alignment mode to find the best alignment,
     then calculates identity as the percentage of matching residues in the shorter sequence.
     Note: pairwise2.align.globalxx showed that it was deprecated in favor of Align.PairwiseAligner.
-    Args:
+    Arguments:
         seq1: First protein sequence as string
         seq2: Second protein sequence as string
 
@@ -46,7 +46,7 @@ def get_sequence_from_list(seq_list, idx):
 
     Handles various sequence storage formats: tuples (id, seq), plain strings, etc.
 
-    Args:
+    Arguments:
         seq_list: List of sequences in various formats
         idx: Index of the sequence to extract
 
@@ -75,7 +75,7 @@ def is_in_blast_top_n(query_idx: int, neighbor_idx: int,
 
     Used to mark which ANN results are also found by BLAST ground truth.
 
-    Args:
+    Arguments:
         query_idx: Index of the query sequence
         neighbor_idx: Index of the neighbor sequence to check
         blast_results: Dictionary containing BLAST results with 'blast_results_indices' key
@@ -286,7 +286,6 @@ def generate_pfam_bio_comment(
     neighbor_pfams: List[str],
     sequence_identity: Optional[float],
     distance: float,
-    in_blast_top_n: Optional[bool],
 ) -> str:
     """
     Generate biological interpretation comment based on Pfam domains and sequence identity.

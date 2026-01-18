@@ -39,7 +39,7 @@ def compute_average_recall(
         recall = compute_recall(ann_res, blast_res, N)
         recalls.append(recall)
 
-    return np.mean(recalls)  # Average recall across all queries
+    return np.mean(recalls).item()  # Average recall across all queries
 
 
 def compute_qps(
@@ -98,7 +98,7 @@ def compute_map(
             avg_precision = np.mean(precisions)
             average_precisions.append(avg_precision)
 
-    return np.mean(average_precisions) if average_precisions else 0.0
+    return float(np.mean(average_precisions)) if average_precisions else 0.0
 
 
 class PerformanceTracker:

@@ -186,7 +186,7 @@ class UniProtClient:
         eco_code = ''
         if evidences:
             eco_code = evidences[0].get('evidenceCode', '')
-        
+
         if eco_code:
             return f"{scientific_name} ({eco_code})"
         else:

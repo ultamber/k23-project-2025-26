@@ -36,7 +36,6 @@ def parse_blast_results(blast_file, database_ids, query_ids, N=50):
 
             query_id = parts[0]
             hit_id = parts[1]
-            pident = float(parts[2])
             evalue = float(parts[10])
             bitscore = float(parts[11])
 

@@ -96,7 +96,7 @@ class BLASTRunner:
         ]
 
         try:
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            _ = subprocess.run(cmd, check=True, capture_output=True, text=True)
             print(f"  BLAST database created")
         except subprocess.CalledProcessError as e:
             print(f"  makeblastdb failed: {e.stderr}")
@@ -136,7 +136,7 @@ class BLASTRunner:
         ]
         os.close(output_fd)
         try:
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=3600)
+            _ = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=3600)
             print(f"  BLAST search completed")
             results = self._parse_blast_output(output_file, N)
             Path(output_file).unlink(missing_ok=True)
@@ -171,7 +171,6 @@ class BLASTRunner:
                 query_id = parts[0]
                 subject_id = parts[1]
                 pident = float(parts[2])
-                length = int(parts[3])
                 evalue = float(parts[4])
                 bitscore = float(parts[5])
 
