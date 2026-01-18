@@ -122,14 +122,10 @@ $$\text{QPS} = \frac{\text{Total Queries}}{\text{Total Search Time (sec)}}$$
 
 ### 3.3 Trade-off Recall vs QPS
 
-???????????
-
-![Recall vs QPS Trade-off](add screenshot)
+![Hypercube](image.png)
 
 **Σχολιασμός:**
-
-*[Σχολιασμός του trade-off: ποια μέθοδος προσφέρει την καλύτερη ισορροπία μεταξύ ακρίβειας και ταχύτητας;]*
-
+Παρατηρήθηκε ότι ο αλγόριθμος Hypercube προσφέρει το καλύτερο trade-off μεταξύ QPS και Recall
 ### 3.4 Αποτελέσματα ανά τιμή N
 
 | N | LSH | Hypercube | IVFFlat | IVFPQ | Neural LSH |
